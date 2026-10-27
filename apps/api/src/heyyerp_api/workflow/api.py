@@ -103,6 +103,7 @@ async def sla_sweep(ctx: Ctx = Depends(sweep_permission)) -> dict[str, int]:
 
 @router.get("/{approval_id}", response_model=ApprovalDetail)
 async def get_approval(approval_id: UUID, ctx: Ctx = Depends(read_ctx)) -> ApprovalDetail:
+    await engine.ensure_visible(ctx, approval_id)
     return ApprovalDetail(**await engine.detail(ctx, approval_id))
 
 

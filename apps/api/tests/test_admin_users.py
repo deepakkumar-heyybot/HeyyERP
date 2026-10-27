@@ -159,3 +159,29 @@ def test_user_changes_are_audited_with_the_acting_admin(make_client, api_databas
             "join erp.app_user u on u.user_id = a.actor_user_id where a.entity_id = %s "
             "order by a.audit_id", (user_id,)).fetchall()
     assert rows == [("user.create", "ADMIN user"), ("user.update", "ADMIN user")]
+
+
+def test_admin_reads_the_audit_log_and_others_cannot(make_client, api_database):
+    admin = make_client("ADMIN")
+    unit = admin.post("/api/v1/org/units", json={"code": code(), "name": "Audited plant"}).json()
+    admin.patch(f"/api/v1/org/units/{unit['unit_id']}", json={"name": "Renamed plant"})
+    log = admin.get(f"/api/v1/admin/audit-log?entity_id={unit['unit_id']}").json()
+    assert [e["action"] for e in log["items"]] == ["unit.update", "unit.create"]  # newest first
+    first = log["items"][0]
+    assert first["actor"] == "ADMIN user" and first["actor_role_code"] == "ADMIN"
+    assert first["details"]["changes"] == {"name": "Renamed plant"}
+    assert first["details"]["email"] == "t@vrub.example"
+    by_prefix = admin.get("/api/v1/admin/audit-log?action=unit.&limit=200").json()
+    assert {e["action"] for e in by_prefix["items"]} <= {"unit.create", "unit.update"}
+    assert admin.get("/api/v1/admin/audit-log?entity_type=unit&limit=1").json()["limit"] == 1
+    assert admin.get("/api/v1/admin/audit-log?action=%25").json()["total"] == 0  # literal, not wildcard
+    for role in ("MD", "PLANT_HEAD", "STORES"):
+        assert make_client(role).get("/api/v1/admin/audit-log").status_code == 403, role
+
+
+def test_the_audit_log_never_shows_another_tenants_entries(make_client, api_database):
+    with psycopg.connect(api_database["owner"], autocommit=True) as conn:
+        conn.execute("insert into erp.audit_log(tenant_id, action, entity_type, entity_id) "
+                     "values (%s, 'secret.thing', 'x', 'tenant-b-only')", (api_database["tenant_b"],))
+    log = make_client("ADMIN").get("/api/v1/admin/audit-log?entity_id=tenant-b-only").json()
+    assert log["total"] == 0 and log["items"] == []

@@ -500,3 +500,17 @@ def test_submit_and_decide_are_audited_and_emit_events(make_client, docs, api_da
             (approval_id,))]
     assert actions == ["approval.submit", "approval.decide"]
     assert events == ["approval.step_pending", "approval.decided"]
+
+
+# ------------------------------------------------------------------ who may read an approval
+def test_an_approval_is_visible_only_to_people_involved_or_who_oversee(make_client, docs):
+    approval_id = submit(make_client("PURCHASE"), docs.add(3_000_000)).json()["approval_id"]
+    url = f"{A}/{approval_id}"
+    # The requester and everyone on the route (Plant Head, MD) may read it.
+    for role in ("PURCHASE", "PLANT_HEAD", "MD"):
+        assert make_client(role).get(url).status_code == 200, role
+    # So may people who oversee approvals (view_all / override) ...
+    assert make_client("ADMIN").get(url).status_code == 200
+    # ... but nobody else: not even its existence is revealed.
+    for role in ("STORES", "QA", "OPERATOR", "HR", "SALES", "ACCOUNTS"):
+        assert make_client(role).get(url).status_code == 404, role

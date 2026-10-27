@@ -299,6 +299,27 @@ async def inbox(
     return [with_due(i) for i in items], total
 
 
+async def ensure_visible(ctx: Ctx, approval_id: UUID) -> None:
+    """Leave, kaizen and review approvals are personal: show an approval only to people who
+    took part in it (the requester or anyone on its route) or who oversee approvals.
+    Everyone else gets 404, so its existence is not revealed either."""
+    row = await one(
+        ctx, "SELECT submitted_by, route_snapshot FROM erp.approval_instance "
+        "WHERE approval_id = :id", {"id": approval_id},
+    )
+    if row is None:
+        raise not_found("Approval")
+    me = ctx.principal.profile
+    if (
+        has_permission(ctx.principal, "approval.view_all")
+        or has_permission(ctx.principal, "approval.override")
+        or row["submitted_by"] == me.app_user_id
+        or any(holds_step(s, me.app_user_id, me.role) for s in row["route_snapshot"]["steps"])
+    ):
+        return
+    raise not_found("Approval")
+
+
 async def detail(ctx: Ctx, approval_id: UUID) -> dict[str, Any]:
     row = await one(ctx, f"{LIST_SQL} WHERE i.approval_id = :id", {"id": approval_id})
     if row is None:
