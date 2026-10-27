@@ -1,1 +1,0 @@
-"""heyyERP API application package."""
