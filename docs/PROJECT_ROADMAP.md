@@ -47,7 +47,10 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [ ] Reconcile invitation expiry: `apps/auth/README.md` says 10 minutes, while `apps/auth/src/auth.ts` currently sets 7 days; confirm the intended rule and align implementation and documentation.
 - [ ] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
 - [ ] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
-- [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`; `get_tenant_session` already depends on it, but nothing populates it yet.
+- [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`. Built on `feature/api-session-middleware` (`security.py`, `GET /api/v1/me`, 11 unit tests, ruff and mypy clean); tick after review, merge and the live check below.
+- [ ] Live-check the middleware against the real auth service and database: the `auth.member` / `auth.organization` column names (`"userId"`, `"organizationId"`, `slug`) are assumed from Better Auth defaults and were not run against PostgreSQL.
+- [ ] Create the V-Rub `tenant` row and set `ORG_TENANT_MAP` in the API `.env` (organization slug to tenant UUID).
+- [ ] Make the API connect as a non-owner PostgreSQL role (or `FORCE ROW LEVEL SECURITY`): table owners bypass RLS, so the tenant policies do nothing if the API runs as `postgres`.
 - [x] Decide the MFA policy: follow BRD section 9.4 — TOTP is mandatory only for ADMIN, MD and ACCOUNTS (decided by the project owner, 2026-10-27). `src/auth-contract.ts` now encodes this.
 - [ ] Align the web onboarding flow with the MFA policy: `apps/web/src/App.tsx` still sends every user to `/totp-setup` after sign-in; make TOTP enrollment required only for the three roles, and update the matching sentence in `apps/auth/README.md`.
 - [ ] Add shop-floor OTP / PIN sign-in (BRD FR-ADM-06 and FR-ADM-07) before shop-floor users are onboarded; until then they use verified email and password.
@@ -156,7 +159,7 @@ Finish Phase 1 before any business module. In order:
 
 1. Fix the invitation-expiry mismatch (10 minutes in the README, 7 days in `apps/auth/src/auth.ts`).
 2. Align the web sign-in flow with the MFA policy (decided: BRD section 9.4).
-3. Build the API session middleware and organization-to-tenant mapping.
+3. Review and merge the API session middleware (built), then run the live checks and create the tenant mapping.
 4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
 5. Add database migrations so a clean database can be built from the repository.
 
@@ -164,4 +167,5 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: MFA policy decided (BRD 9.4). API session middleware and `/me` built on `feature/api-session-middleware`, awaiting review; not yet ticked.
 - 2026-10-27: Added the module status board and two Phase 1 items (API session middleware, MFA policy) after reviewing the repository. No items newly ticked.
