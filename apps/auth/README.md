@@ -18,6 +18,9 @@ second identity.
 - Org creation is disabled. Admins invite members and assign roles; invitations stay
   valid for 7 days (604800 seconds) so a person can accept them in practice. Existing users accept the invitation with their existing account.
 - Database tables live in PostgreSQL schema `auth`, isolated from the ERP `erp` schema.
+- In local development, if `RESEND_SMTP_PASSWORD` is empty the service does not fail: it prints each
+  email (including its verification or reset link) in the auth terminal so the link can be opened.
+  In production the missing key is an error.
 - Email uses Resend SMTP; no API key is stored in source. The sender address must be
   verified in the Resend account. Set all values from `.env.example` in an ignored `.env`.
 

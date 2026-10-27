@@ -18,7 +18,17 @@ export async function sendAuthEmail(input: {
     hook(input);
     return;
   }
-  if (!password) throw new Error("RESEND_SMTP_PASSWORD is required to send auth email");
+  if (!password) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("RESEND_SMTP_PASSWORD is required to send auth email");
+    }
+    // Local development without a mail service: show the email here so its link can be opened.
+    console.warn(
+      `\n[dev mail] RESEND_SMTP_PASSWORD is not set, so this email was NOT sent.\n` +
+      `  To:      ${input.to}\n  Subject: ${input.subject}\n  ${input.text}\n`,
+    );
+    return;
+  }
   const transport = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass: password } });
   try {
     await transport.sendMail({ from, ...input });
