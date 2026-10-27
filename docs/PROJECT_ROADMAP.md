@@ -21,7 +21,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 | Product engineering | 4 | `item`, `item_unit_policy`, `item_specification`, `bom`, `bom_line`, `engineering_change`, `route`, `route_stage`, `customer_part_xref` | Done | Items, plant policies, specifications, customer part numbers, versioned routes, BOMs with revisions, engineering changes and effective dates | Compound-to-item link (Phase 7), item cost, BOM explosion (MRP) |
 | Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `document_sequence` | Done | Indents, RFQs with quotes and comparison, purchase orders with approval, rules and receiving handoff | Goods receipt (Phase 6), purchase returns, cash purchase, vendor rating (BRD "should"), bill matching (Phase 10) |
 | Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_issue`, `stock_reservation`, `stock_transfer*`, `stock_count*` | Done | Goods receipts, QA release, FEFO/FIFO issue, reservations, transfers between stores and plants, counts with approval, FIFO valuation, lot trace, reconciliation | Serial numbers, labels/barcodes, purchase-return debit notes (Phase 10), short receipt on transfers |
-| Manufacturing and production | 7 | `compound*`, `compound_batch`, `batch_weighing_line`, `prod_lot*`, `lot_consumption`, `work_order`, `shift_production`, `packing` | Not started | — | — |
+| Manufacturing and production | 7 | `compound*`, `compound_batch`, `batch_weighing_line`, `prod_lot*`, `lot_consumption`, `work_order`, `shift_production`, `shift_loss`, `rework_record`, `packing`, `machine`, `mould` | Done | Compounds and batches with derived status, work orders, lots through routes with QA gates, FIFO compound and insert consumption, packing to FG, shift entries, downtime, OEE (availability and quality), rework, returns, WIP, tracing | MRP from sales schedules (Phase 9), costed production (Phase 10), OEE performance (needs ideal cycle time), batch and lot labels, voice entry (BRD "could"), maintenance on machines and moulds (Phase 11) |
 | Quality | 8 | `qa_inspection*`, `qa_measurement`, `ncr*`, `instrument`, `calibration` | Not started | — | — |
 | Sales and dispatch | 9 | `customer_rfq*`, `customer_quote*`, `price_list*`, `sales_order`, `so_*`, `schedule_import`, `dispatch*`, `challan*`, `customer_part_xref`, `scrap_sale` | Not started | — | — |
 | Finance and GST | 10 | `fiscal_period`, `journal*`, `supplier_bill*`, `bill_match`, `customer_invoice`, `inter_unit_invoice`, `payment*`, `gst_return_data`, `tds_entry` | Not started | — | — |
@@ -100,10 +100,10 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 ## Phase 7 — Manufacturing and production
 
-- [ ] Implement production plans/work orders using approved BOM and routing revisions.
-- [ ] Implement material issue/return, operation progress, WIP, output, downtime, and rework records.
-- [ ] Enforce route gates and compound maturation/expiry rules.
-- [ ] Test work-order material/output reconciliation and end-to-end lot traceability.
+- [x] Implement production plans/work orders using approved BOM and routing revisions: done on `dev` (`/manufacturing/work-orders`: BOM in force today, the item's active route, release, cancel, complete; compound master with recipe in phr, machines and moulds; migrations `0009`, `0010`). Planned lots cannot exceed the order quantity.
+- [x] Implement material issue/return, operation progress, WIP, output, downtime, and rework records: done (`/manufacturing/lots` with stage moves recording who, when, quantity in/out and rejects; packing books FG stock; `/shift-entries` with rejects and downtime by reason; `/wip`, `/oee`, `/rework`, `/return-material`; migration `0011`). Finished goods enter stock at zero cost until Phase 10.
+- [x] Enforce route gates and compound maturation/expiry rules: done (leaving a QA gate needs `qa.approve`, other stages `route.move`; batch status is derived by a database view; QA only after minimum maturation and only inside the hardness spec; expired, unapproved or maturing compound is never drawn; the production month locks by `lockDay` plus `prodLockExtraDays`).
+- [x] Test work-order material/output reconciliation and end-to-end lot traceability: done in `tests/test_compound_batches.py` (including concurrent compound draws), `test_work_orders.py` and `test_shop_floor.py` (lot and material reconciliation, trace from finished lot to raw-material lot, forward trace from a batch).
 
 ## Phase 8 — Quality
 
@@ -167,6 +167,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Phase 7 built on `dev`: compounds, batch weighing to QA with a derived status, work orders, lots through METAL, MOULD and EXTR routes, compound and insert consumption, packing, shift entries, OEE, rework, returns, WIP and tracing; migrations `0009` to `0011`. Open: costed production, OEE performance, labels for batches and lots, extrusion-specific steps beyond the route, MRP. Apply `alembic upgrade head` and re-run the seed on existing databases.
 - 2026-10-27: Phase 6 built on `dev`: stock ledger, goods receipts with QA release, FEFO/FIFO issue, reservations, transfers (between stores and plants, cost carried), cycle counts with approval, valuation, expiry and reorder reports, lot trace and reconciliation; migration `0008`. Open: serial numbers, barcode labels, short receipt on a transfer, debit notes for purchase returns (Phase 10). Apply `alembic upgrade head` and re-run the seed on existing databases.
 - 2026-10-27: Phase 5 built on `dev`: indents, RFQs, purchase orders and the receiving handoff; migration `0007`. Not built (BRD "should" or later phases): cash purchase (FR-PRC-09), purchase returns and debit notes (FR-PRC-08), vendor rating (FR-PRC-05), the goods receipt itself (Phase 6), PO amendment after approval.
 - 2026-10-27: Phase 4 built on `dev`: BOMs with revisions, engineering changes, effective dates and approval (171 API tests pass). Open design notes: BOM is per item, not per plant (plant applicability is the item's plant policy); rubber compounds are not linked to items yet (planned with Phase 7); the schema has no item cost or rate.
