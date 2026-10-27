@@ -63,10 +63,10 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [ ] Implement departments, parent-department relationships, and plant association: built on `feature/master-org` (`/api/v1/org/departments`; no cycles, no inactive parent or plant). Tick after review and merge.
 - [ ] Implement stores/warehouses under plants, including store type and active status: built on `feature/master-org` (`/api/v1/org/stores`; code unique per plant; no stores on inactive plants). Phase 6 must add the check that blocks deactivating a store that holds stock. Tick after review and merge.
 - [ ] Implement shared reference data required by the BRD (for example UOM, item categories, payment terms, and tax codes) after scope review: built on `feature/master-reference` (`/api/v1/ref/payment-terms`, `tax-codes`, `item-categories`, read-only `uom` seeded by migration `0003` with 14 common units; V-Rub must confirm the real unit list). Tick after review and merge.
-- [ ] Implement customer and vendor master records with validated identifiers and status; keep procurement/sales transaction behavior in their own modules.
-- [ ] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities: pattern and shared helpers built on `feature/master-org` (interim role-to-permission map in `security.py`, audit rows in `erp.audit_log`, paging, constraint errors as 4xx). Applied so far to plants, departments, stores and reference data; customers and vendors still to do.
-- [ ] Add tests for uniqueness, invalid references, inactive records, authorization, and cross-tenant access.
-- [ ] Confirm real plant names, GSTINs, department list, and store list with V-Rub before loading production master data.
+- [ ] Implement customer and vendor master records with validated identifiers and status; keep procurement/sales transaction behavior in their own modules: built on `feature/master-parties` (`/api/v1/parties/customers` and `/vendors`; GSTIN check digit, PAN format, PAN must match the GSTIN; vendors always start PENDING_APPROVAL and the client cannot set status; migration `0004` allows one vendor per GSTIN per tenant). Vendor approval and reactivation arrive with the Phase 3 workflow. Tick after review and merge.
+- [ ] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities: built for plants, departments, stores, reference data, customers and vendors (interim role-to-permission map in `security.py`; audit rows in `erp.audit_log`; paging; constraint errors as 4xx). Tick after the three Phase 2 branches are reviewed and merged.
+- [ ] Add tests for uniqueness, invalid references, inactive records, authorization, and cross-tenant access: done in `tests/test_org_api.py`, `test_reference_api.py` and `test_parties_api.py` (54 API tests in total pass against a scratch database with two tenants and a non-owner login). Tick after merge.
+- [ ] Confirm real plant names, GSTINs, department list, and store list with V-Rub before loading production master data. Note: the BRD's demo GSTINs (for example `06AAKCV4123R1ZQ`) fail the real check-digit test, so they cannot be loaded; real values are needed. Also still open: the 14 seeded units of measure and the vendor bank-account fields (BRD FR-PRC-04 asks for bank checks, but `erp.vendor` has no bank columns).
 
 ## Phase 3 — Roles, permissions, and approval workflow
 
@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Customers and vendors built on `feature/master-parties`; 54 API tests pass. Phase 2 code complete, awaiting review and merge of three branches.
 - 2026-10-27: Reference data (payment terms, tax codes, item categories, UOM) built on `feature/master-reference`; 43 API tests pass.
 - 2026-10-27: Phase 2 started on `feature/master-org`: plants, departments and stores APIs with shared master-data helpers; 36 API tests pass against a scratch database (two tenants, non-owner login). Not ticked until merged.
 - 2026-10-27: Full-stack check of the combined branches (auth + API + web, real browser, no mocks): STORES signs in without TOTP; a non-member is refused; MD is sent to authenticator setup, enrols with a real TOTP code, and is then asked for a code at the next sign-in (wrong code rejected). Found and fixed on `fix/web-sign-out`: the "Sign out" link did not end the session.
