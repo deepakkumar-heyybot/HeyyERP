@@ -9,6 +9,7 @@ from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
 from heyyerp_api.masters.reference import router as reference_router
 from heyyerp_api.procurement.indents import router as indents_router
+from heyyerp_api.procurement.orders import router as orders_router
 from heyyerp_api.procurement.rfq import router as rfq_router
 from heyyerp_api.product.bom import router as bom_router
 from heyyerp_api.product.items import router as items_router
@@ -32,3 +33,4 @@ api_router.include_router(routes_router)
 api_router.include_router(bom_router)
 api_router.include_router(indents_router)
 api_router.include_router(rfq_router)
+api_router.include_router(orders_router)
