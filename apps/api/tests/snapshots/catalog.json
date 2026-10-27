@@ -1,0 +1,565 @@
+{
+ "permissions": [
+  "admin",
+  "ai",
+  "approval.override",
+  "approval.view_all",
+  "asset.manage",
+  "bom.manage",
+  "cash.purchase",
+  "challan",
+  "customer.manage",
+  "fin.bill",
+  "fin.pay",
+  "fin.voucher",
+  "grn.post",
+  "gst",
+  "hr.manage",
+  "indent.raise",
+  "inv.count",
+  "inv.issue",
+  "inv.transfer",
+  "item.manage",
+  "kaizen.manage",
+  "kaizen.submit",
+  "leave.apply",
+  "mfg.entry",
+  "mfg.plan",
+  "mnt",
+  "mnt.breakdown",
+  "ncr",
+  "org.manage",
+  "payroll",
+  "po.create",
+  "qa.approve",
+  "refdata.manage",
+  "route.manage",
+  "route.move",
+  "sales.dispatch",
+  "sales.order",
+  "sales.quote",
+  "scrap.sale",
+  "vendor.manage"
+ ],
+ "modules": [
+  "admin",
+  "ai",
+  "approvals",
+  "benchmark",
+  "finance",
+  "golive",
+  "gst",
+  "home",
+  "hr",
+  "integrations",
+  "inventory",
+  "kaizen",
+  "maintenance",
+  "manufacturing",
+  "procurement",
+  "quality",
+  "reports",
+  "routes",
+  "sales"
+ ],
+ "roles": {
+  "ACCOUNTS": {
+   "permissions": [
+    "ai",
+    "asset.manage",
+    "fin.bill",
+    "fin.pay",
+    "fin.voucher",
+    "gst",
+    "kaizen.submit",
+    "leave.apply",
+    "refdata.manage"
+   ],
+   "modules": [
+    "ai",
+    "approvals",
+    "finance",
+    "gst",
+    "home",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "procurement",
+    "reports",
+    "sales"
+   ]
+  },
+  "ADMIN": {
+   "permissions": [
+    "admin",
+    "ai",
+    "approval.override",
+    "approval.view_all",
+    "asset.manage",
+    "bom.manage",
+    "cash.purchase",
+    "challan",
+    "customer.manage",
+    "fin.bill",
+    "fin.pay",
+    "fin.voucher",
+    "grn.post",
+    "gst",
+    "hr.manage",
+    "indent.raise",
+    "inv.count",
+    "inv.issue",
+    "inv.transfer",
+    "item.manage",
+    "kaizen.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "mfg.entry",
+    "mfg.plan",
+    "mnt",
+    "mnt.breakdown",
+    "ncr",
+    "org.manage",
+    "payroll",
+    "po.create",
+    "qa.approve",
+    "refdata.manage",
+    "route.manage",
+    "route.move",
+    "sales.dispatch",
+    "sales.order",
+    "sales.quote",
+    "scrap.sale",
+    "vendor.manage"
+   ],
+   "modules": [
+    "admin",
+    "ai",
+    "approvals",
+    "benchmark",
+    "finance",
+    "golive",
+    "gst",
+    "home",
+    "hr",
+    "integrations",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "manufacturing",
+    "procurement",
+    "quality",
+    "reports",
+    "routes",
+    "sales"
+   ]
+  },
+  "HR": {
+   "permissions": [
+    "hr.manage",
+    "kaizen.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "payroll"
+   ],
+   "modules": [
+    "approvals",
+    "home",
+    "hr",
+    "kaizen",
+    "reports"
+   ]
+  },
+  "MAINT": {
+   "permissions": [
+    "indent.raise",
+    "kaizen.submit",
+    "leave.apply",
+    "mnt",
+    "mnt.breakdown"
+   ],
+   "modules": [
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "routes"
+   ]
+  },
+  "MD": {
+   "permissions": [
+    "ai",
+    "approval.view_all",
+    "asset.manage",
+    "bom.manage",
+    "cash.purchase",
+    "challan",
+    "customer.manage",
+    "fin.bill",
+    "fin.pay",
+    "fin.voucher",
+    "grn.post",
+    "gst",
+    "hr.manage",
+    "indent.raise",
+    "inv.count",
+    "inv.issue",
+    "inv.transfer",
+    "item.manage",
+    "kaizen.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "mfg.entry",
+    "mfg.plan",
+    "mnt",
+    "mnt.breakdown",
+    "ncr",
+    "org.manage",
+    "payroll",
+    "po.create",
+    "qa.approve",
+    "refdata.manage",
+    "route.manage",
+    "route.move",
+    "sales.dispatch",
+    "sales.order",
+    "sales.quote",
+    "scrap.sale",
+    "vendor.manage"
+   ],
+   "modules": [
+    "admin",
+    "ai",
+    "approvals",
+    "benchmark",
+    "finance",
+    "golive",
+    "gst",
+    "home",
+    "hr",
+    "integrations",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "manufacturing",
+    "procurement",
+    "quality",
+    "reports",
+    "routes",
+    "sales"
+   ]
+  },
+  "OPERATOR": {
+   "permissions": [
+    "kaizen.submit",
+    "leave.apply",
+    "mfg.entry",
+    "mnt.breakdown",
+    "route.move"
+   ],
+   "modules": [
+    "kaizen",
+    "manufacturing",
+    "routes"
+   ]
+  },
+  "PLANT_HEAD": {
+   "permissions": [
+    "ai",
+    "approval.view_all",
+    "bom.manage",
+    "customer.manage",
+    "indent.raise",
+    "inv.count",
+    "inv.issue",
+    "item.manage",
+    "kaizen.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "mfg.entry",
+    "mfg.plan",
+    "mnt",
+    "mnt.breakdown",
+    "po.create",
+    "refdata.manage",
+    "route.manage",
+    "route.move",
+    "scrap.sale"
+   ],
+   "modules": [
+    "admin",
+    "ai",
+    "approvals",
+    "finance",
+    "gst",
+    "home",
+    "hr",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "manufacturing",
+    "procurement",
+    "quality",
+    "reports",
+    "routes",
+    "sales"
+   ]
+  },
+  "PROD": {
+   "permissions": [
+    "ai",
+    "bom.manage",
+    "indent.raise",
+    "inv.issue",
+    "item.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "mfg.entry",
+    "mfg.plan",
+    "mnt.breakdown",
+    "route.manage",
+    "route.move"
+   ],
+   "modules": [
+    "ai",
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "maintenance",
+    "manufacturing",
+    "quality",
+    "reports",
+    "routes"
+   ]
+  },
+  "PURCHASE": {
+   "permissions": [
+    "ai",
+    "cash.purchase",
+    "indent.raise",
+    "item.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "po.create",
+    "vendor.manage"
+   ],
+   "modules": [
+    "ai",
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "procurement",
+    "reports",
+    "routes"
+   ]
+  },
+  "QA": {
+   "permissions": [
+    "bom.manage",
+    "indent.raise",
+    "item.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "ncr",
+    "qa.approve",
+    "route.manage"
+   ],
+   "modules": [
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "manufacturing",
+    "procurement",
+    "quality",
+    "reports",
+    "routes"
+   ]
+  },
+  "SALES": {
+   "permissions": [
+    "ai",
+    "challan",
+    "customer.manage",
+    "kaizen.submit",
+    "leave.apply",
+    "sales.dispatch",
+    "sales.order",
+    "sales.quote",
+    "scrap.sale"
+   ],
+   "modules": [
+    "ai",
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "reports",
+    "sales"
+   ]
+  },
+  "STORES": {
+   "permissions": [
+    "cash.purchase",
+    "challan",
+    "grn.post",
+    "indent.raise",
+    "inv.count",
+    "inv.issue",
+    "inv.transfer",
+    "item.manage",
+    "kaizen.submit",
+    "leave.apply"
+   ],
+   "modules": [
+    "approvals",
+    "home",
+    "inventory",
+    "kaizen",
+    "procurement",
+    "reports",
+    "routes"
+   ]
+  }
+ },
+ "settings": {
+  "grnTolPct": {
+   "kind": "int",
+   "default": 10,
+   "rule": "RULE-01"
+  },
+  "priceTolPct": {
+   "kind": "int",
+   "default": 0,
+   "rule": "RULE-02"
+  },
+  "requireIndent": {
+   "kind": "bool",
+   "default": false,
+   "rule": "RULE-03"
+  },
+  "cashLimit": {
+   "kind": "decimal",
+   "default": null,
+   "rule": "RULE-04"
+  },
+  "minQuotes": {
+   "kind": "int",
+   "default": null,
+   "rule": "RULE-05"
+  },
+  "valuation": {
+   "kind": "enum",
+   "default": "FIFO",
+   "rule": "RULE-06"
+  },
+  "negativeStock": {
+   "kind": "bool",
+   "default": false,
+   "rule": "RULE-07"
+  },
+  "issueRule": {
+   "kind": "enum",
+   "default": "FEFO",
+   "rule": "RULE-08"
+  },
+  "countFreq": {
+   "kind": "enum",
+   "default": "MONTHLY",
+   "rule": "RULE-09"
+  },
+  "marginMD": {
+   "kind": "decimal",
+   "default": null,
+   "rule": "RULE-10"
+  },
+  "schedFormat": {
+   "kind": "enum",
+   "default": "EXCEL_AND_EMAIL",
+   "rule": "RULE-11"
+  },
+  "prodReporting": {
+   "kind": "enum",
+   "default": "PER_SHIFT",
+   "rule": "RULE-12"
+  },
+  "consumption": {
+   "kind": "enum",
+   "default": "ACTUAL_ISSUE",
+   "rule": "RULE-13"
+  },
+  "interUnit": {
+   "kind": "bool",
+   "default": true,
+   "rule": "RULE-14"
+  },
+  "lockDay": {
+   "kind": "int",
+   "default": 0,
+   "rule": "RULE-15"
+  },
+  "prodLockExtraDays": {
+   "kind": "int",
+   "default": 1,
+   "rule": "RULE-15"
+  },
+  "appraisal": {
+   "kind": "enum",
+   "default": "YEARLY",
+   "rule": "RULE-16"
+  },
+  "language": {
+   "kind": "enum",
+   "default": "EN",
+   "rule": "RULE-17"
+  },
+  "creditLimitBlock": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "msmePayDays": {
+   "kind": "int",
+   "default": 45,
+   "rule": "DEFAULT"
+  }
+ },
+ "numbering_prefixes": {
+  "batch": "BAT",
+  "count": "CNT",
+  "grn": "GRN",
+  "indent": "IND",
+  "inspection": "QI",
+  "issue": "ISS",
+  "ncr": "NCR",
+  "packing": "PK",
+  "po": "PO",
+  "prod_lot": "PL",
+  "return": "RET",
+  "rfq": "RFQ",
+  "transfer": "TRF",
+  "work_order": "WO"
+ },
+ "approval_document_types": [
+  "bill",
+  "bom",
+  "count",
+  "indent",
+  "kaizen",
+  "leave",
+  "po",
+  "review",
+  "scrap",
+  "vendor"
+ ],
+ "registered_document_types": [
+  "bom",
+  "count",
+  "indent",
+  "po",
+  "vendor"
+ ]
+}
