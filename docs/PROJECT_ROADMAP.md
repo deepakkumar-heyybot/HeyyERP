@@ -59,12 +59,12 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 ## Phase 2 — Organization and master data
 
 - [ ] Define the approved organization-to-tenant mapping and organization settings.
-- [ ] Implement plants/business units with GSTIN, state, active status, and tenant-scoped unique codes.
-- [ ] Implement departments, parent-department relationships, and plant association.
-- [ ] Implement stores/warehouses under plants, including store type and active status.
+- [ ] Implement plants/business units with GSTIN, state, active status, and tenant-scoped unique codes: built on `feature/master-org` (`/api/v1/org/units`; GSTIN format and check-digit validation; state derived from GSTIN; cannot deactivate a plant with active stores or departments). Tick after review and merge.
+- [ ] Implement departments, parent-department relationships, and plant association: built on `feature/master-org` (`/api/v1/org/departments`; no cycles, no inactive parent or plant). Tick after review and merge.
+- [ ] Implement stores/warehouses under plants, including store type and active status: built on `feature/master-org` (`/api/v1/org/stores`; code unique per plant; no stores on inactive plants). Phase 6 must add the check that blocks deactivating a store that holds stock. Tick after review and merge.
 - [ ] Implement shared reference data required by the BRD (for example UOM, item categories, payment terms, and tax codes) after scope review.
 - [ ] Implement customer and vendor master records with validated identifiers and status; keep procurement/sales transaction behavior in their own modules.
-- [ ] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities.
+- [ ] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities: pattern and shared helpers built on `feature/master-org` (interim role-to-permission map in `security.py`, audit rows in `erp.audit_log`, paging, constraint errors as 4xx). Applied so far to plants, departments and stores; reference data, customers and vendors still to do.
 - [ ] Add tests for uniqueness, invalid references, inactive records, authorization, and cross-tenant access.
 - [ ] Confirm real plant names, GSTINs, department list, and store list with V-Rub before loading production master data.
 
@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Phase 2 started on `feature/master-org`: plants, departments and stores APIs with shared master-data helpers; 36 API tests pass against a scratch database (two tenants, non-owner login). Not ticked until merged.
 - 2026-10-27: Full-stack check of the combined branches (auth + API + web, real browser, no mocks): STORES signs in without TOTP; a non-member is refused; MD is sent to authenticator setup, enrols with a real TOTP code, and is then asked for a code at the next sign-in (wrong code rejected). Found and fixed on `fix/web-sign-out`: the "Sign out" link did not end the session.
 - 2026-10-27: MFA policy decided (BRD 9.4). API session middleware and `/me` built on `feature/api-session-middleware`, awaiting review; not yet ticked.
 - 2026-10-27: Added the module status board and two Phase 1 items (API session middleware, MFA policy) after reviewing the repository. No items newly ticked.

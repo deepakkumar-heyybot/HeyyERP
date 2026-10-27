@@ -5,37 +5,20 @@ at a PostgreSQL server login that may create databases and roles, e.g.
   TEST_ADMIN_DATABASE_URL=postgresql://postgres:***@localhost:5432/postgres
 """
 
-import os
-from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import psycopg
 import pytest
 from alembic import command
-from alembic.config import Config
 
 from heyyerp_api.config import get_settings
 
-ADMIN_URL = os.environ.get("TEST_ADMIN_DATABASE_URL")
+from .dbutil import ADMIN_URL, alembic_config, url_for
+
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_ADMIN_DATABASE_URL is not set")
 
-API_DIR = Path(__file__).resolve().parent.parent
 SCRATCH_DB = "heyyerp_migration_test"
 APP_ROLE, APP_PASSWORD = "heyyerp_app_test", "app-test-password"
-
-
-def url_for(database: str, user: str | None = None, password: str | None = None) -> str:
-    parts = urlsplit(ADMIN_URL)
-    host = parts.hostname + (f":{parts.port}" if parts.port else "")
-    auth = f"{user}:{password}@" if user else parts.netloc.rsplit("@", 1)[0] + "@"
-    return urlunsplit((parts.scheme, auth + host, f"/{database}", "", ""))
-
-
-def alembic_config() -> Config:
-    config = Config(str(API_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(API_DIR / "migrations"))
-    return config
 
 
 @pytest.fixture(scope="module")

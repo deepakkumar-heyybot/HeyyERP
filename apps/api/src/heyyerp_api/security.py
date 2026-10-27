@@ -132,3 +132,25 @@ async def require_principal(
     request.state.tenant_id = tenant_id
     request.state.principal = principal
     return principal
+
+
+# Interim role -> permission map (BRD section 3). Phase 3 replaces it with the role_permission
+# tables. Better Auth's built-in "owner" counts as ADMIN until ERP roles are configured there.
+# ponytail: static map; move to the database when admins must edit roles at runtime.
+ROLE_ALIASES = {"OWNER": "ADMIN"}
+ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
+    "ADMIN": frozenset({"*"}),
+    "MD": frozenset({"*"}),
+    "PLANT_HEAD": frozenset({"refdata.manage", "customer.manage", "vendor.manage"}),
+    "PURCHASE": frozenset({"vendor.manage"}),
+    "SALES": frozenset({"customer.manage"}),
+    "ACCOUNTS": frozenset({"refdata.manage"}),
+}
+
+
+def has_permission(principal: Principal, permission: str) -> bool:
+    for role in principal.roles:
+        granted = ROLE_PERMISSIONS.get(ROLE_ALIASES.get(role, role), frozenset())
+        if "*" in granted or permission in granted:
+            return True
+    return False

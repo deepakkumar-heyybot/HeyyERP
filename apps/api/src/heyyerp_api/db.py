@@ -3,18 +3,36 @@ from uuid import UUID
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from heyyerp_api.config import get_settings
 
 settings = get_settings()
-engine = create_async_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=settings.db_pool_size,
-    max_overflow=settings.db_max_overflow,
-)
+
+
+def _build_engine(url: str) -> AsyncEngine:
+    return create_async_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
+
+
+engine = _build_engine(settings.database_url)
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+def configure_database(url: str) -> None:
+    """Point the API at another database (used by tests that build a scratch database)."""
+    global engine, SessionFactory
+    engine = _build_engine(url)
+    SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
