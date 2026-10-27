@@ -37,7 +37,7 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [x] Apply the current PostgreSQL schema in pgAdmin (confirmed by the project owner).
 - [ ] Review the current schema against BRD requirements; confirm each table, tenant boundary, and relationship before treating it as production-ready.
 - [ ] Set up teammate repository access and agree branch protection / pull-request review rules.
-- [ ] Establish repeatable database migrations and a clean-database setup check.
+- [ ] Establish repeatable database migrations and a clean-database setup check: built on `feature/db-migrations` (Alembic: `0001` baseline, `0002` app-role grants; tests build a scratch database from nothing). The live `HeyyERP` database was verified identical to a fresh migration (1,006 columns, 1,646 constraints, 285 indexes, 127 tables/views), stamped `0001` and upgraded to `0002`. Tick after review and merge.
 
 ## Phase 1 — Authentication and tenant security
 
@@ -50,11 +50,11 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`. Built on `feature/api-session-middleware` (`security.py`, `GET /api/v1/me`, 11 unit tests, ruff and mypy clean); tick after review, merge and the live check below.
 - [x] Live-check the middleware (2026-10-27, local `HeyyERP` database): ran the auth migration, signed in a temporary user and called `GET /api/v1/me` against the real auth service and PostgreSQL. Verified: no cookie 401; forged cookie 401; unverified email blocked at sign-in; MD without 2FA gets `access_granted:false`; STORES gets `access_granted:true`; removing the membership gives 403. Test user deleted afterwards.
 - [x] Create the V-Rub `tenant` row and set `ORG_TENANT_MAP` in the API `.env` (done locally; repeat for staging and production). The `v-rub-suspensions` organization row was also created in `auth.organization`; there is still no seed script for it.
-- [x] Make the API connect as a non-owner PostgreSQL role: local role `heyyerp_app` (no superuser, no BYPASSRLS) created with table DML on `erp` and SELECT on `auth.member` / `auth.organization` only. Tested: without a tenant set 0 rows are visible, the own tenant shows 1, another tenant 0, and inserting a row for another tenant is rejected. Still needed: scripted role creation for other environments (with the migrations item), and the full tenant-isolation test suite.
+- [x] Make the API connect as a non-owner PostgreSQL role: local role `heyyerp_app` (no superuser, no BYPASSRLS) created with table DML on `erp` and SELECT on `auth.member` / `auth.organization` only. Tested: without a tenant set 0 rows are visible, the own tenant shows 1, another tenant 0, and inserting a row for another tenant is rejected. Role grants are now scripted in migration `0002` (group role `heyyerp_app_rw`); creating the login itself is a documented per-environment step in `apps/api/README.md`.
 - [x] Decide the MFA policy: follow BRD section 9.4 — TOTP is mandatory only for ADMIN, MD and ACCOUNTS (decided by the project owner, 2026-10-27). `src/auth-contract.ts` now encodes this.
 - [ ] Align the web onboarding flow with the MFA policy: built on `feature/web-mfa-flow` — after sign-in the web app calls `GET /api/v1/me` and only sends roles that must use MFA and have not enrolled to `/totp-setup`; `/app` re-checks access; API now allows CORS from `WEB_BASE_URL`. Tick after review and merge.
 - [ ] Add shop-floor OTP / PIN sign-in (BRD FR-ADM-06 and FR-ADM-07) before shop-floor users are onboarded; until then they use verified email and password.
-- [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes.
+- [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes: database-level tests built on `feature/db-migrations` (RLS and a policy on every `tenant_id` table; a non-owner login sees only its own tenant, cannot update, delete or insert across tenants, cannot disable RLS). Still to add: an API-level test once the first tenant-scoped endpoint exists. Tick after review and merge.
 
 ## Phase 2 — Organization and master data
 
@@ -161,7 +161,7 @@ Finish Phase 1 before any business module. In order:
 2. Review and merge the web MFA flow (built, see Phase 1).
 3. Review and merge the API session middleware (built and live-checked).
 4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
-5. Add database migrations so a clean database can be built from the repository.
+5. Review and merge the migrations and tenant-isolation tests (built), then run and record the auth end-to-end tests.
 
 Then begin Phase 2 (organization and master data). Tick items module by module only after tests pass and the reviewed change is merged.
 

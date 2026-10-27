@@ -34,10 +34,40 @@ The dependency starts a transaction and sets PostgreSQL's transaction-local
 `app.tenant_id`, which is read by the RLS policies in the SQL schema. Do not accept a
 tenant ID directly from an untrusted request header or query parameter.
 
+## Database migrations
+
+The schema is managed by Alembic (`apps/api/migrations`). Revision `0001` is a frozen copy of
+`heyyERP_postgresql_schema.sql`; change the schema through new revisions, not by editing it.
+Migrations run as the schema **owner** (`MIGRATION_DATABASE_URL`), never as the API's login.
+
+```powershell
+alembic upgrade head          # clean database: creates everything
+alembic stamp 0001            # existing database that already has the baseline applied
+```
+
+Then create the API's non-owner login once per environment (revision `0002` creates the
+`heyyerp_app_rw` group role with the grants; no passwords live in migrations):
+
+```sql
+CREATE ROLE heyyerp_app LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS IN ROLE heyyerp_app_rw;
+```
+
+If the Better Auth `auth` schema is created *after* `0002` ran, also run:
+`GRANT USAGE ON SCHEMA auth TO heyyerp_app_rw; GRANT SELECT ON auth.member, auth.organization TO heyyerp_app_rw;`
+
+## Tests
+
+`pytest` runs the unit tests. The database tests (clean-database migration, tenant isolation
+under row-level security) create and drop a scratch database and run only when
+`TEST_ADMIN_DATABASE_URL` points at a login that may create databases and roles:
+
+```powershell
+$env:TEST_ADMIN_DATABASE_URL = "postgresql://postgres:<password>@localhost:5432/postgres"
+pytest
+```
+
 ## Next backend milestones
 
-1. Confirm authentication/session architecture and install local PostgreSQL.
-2. Convert the reviewed SQL baseline into Alembic migrations and add migration checks.
-3. Implement tenant, unit, users, roles, permissions, settings, and audit services.
-4. Implement workflow decisions and inventory ledger posting as transactional services.
-5. Add procurement, quality, production, sales, and finance modules in dependency order.
+1. Implement tenant, unit, users, roles, permissions, settings, and audit services.
+2. Implement workflow decisions and inventory ledger posting as transactional services.
+3. Add procurement, quality, production, sales, and finance modules in dependency order.

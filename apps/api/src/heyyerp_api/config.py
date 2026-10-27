@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     auth_base_url: str = "http://localhost:3001"
     web_base_url: str = "http://localhost:5173"
+    # Owner-role URL used only by Alembic (never by the API itself).
+    migration_database_url: str | None = None
     required_org_slug: str = "v-rub-suspensions"
     # Better Auth organization slug -> ERP tenant_id. Set as JSON, e.g.
     # ORG_TENANT_MAP={"v-rub-suspensions":"<tenant uuid>"}.
