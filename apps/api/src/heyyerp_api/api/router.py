@@ -6,6 +6,7 @@ from heyyerp_api.api.health import router as health_router
 from heyyerp_api.api.me import router as me_router
 from heyyerp_api.business_rules.api import router as business_rules_router
 from heyyerp_api.inventory.grn import router as grn_router
+from heyyerp_api.inventory.issues import router as issues_router
 from heyyerp_api.inventory.stock import router as stock_router
 from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
@@ -38,3 +39,4 @@ api_router.include_router(rfq_router)
 api_router.include_router(orders_router)
 api_router.include_router(grn_router)
 api_router.include_router(stock_router)
+api_router.include_router(issues_router)
