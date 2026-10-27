@@ -48,6 +48,33 @@ def test_from_purchase_order_to_packed_finished_goods(make_client, api_database)
         "lines": [{"item_id": w["fg"]["item_id"], "quantity": "7"}]})
     assert issued.status_code == 201
 
+    # sell it: customer order, dispatch from the packed lot, invoice, and trace the dispatch back
+    sales = Fresh(make_client, "SALES")
+    customer = sales.post("/api/v1/parties/customers", json={
+        "code": "C" + code()[:6], "name": "Maruti Suzuki"}).json()
+    Fresh(make_client, "ADMIN").post(
+        f"/api/v1/product/items/{w['fg']['item_id']}/customer-parts",
+        json={"customer_id": customer["customer_id"], "customer_part_no": "GP-1"})
+    so = sales.post("/api/v1/sales/orders", json={
+        "unit_id": w["unit"]["unit_id"], "customer_id": customer["customer_id"],
+        "lines": [{"item_id": w["fg"]["item_id"], "ordered_qty": "50", "unit_price": "300"}]}).json()
+    shipment = sales.post("/api/v1/sales/dispatches", json={
+        "so_id": so["so_id"], "store_id": fg_store["store_id"],
+        "lines": [{"so_line_id": so["lines"][0]["so_line_id"], "quantity": "50"}]})
+    assert shipment.status_code == 201, shipment.text
+    dispatch_id = shipment.json()["dispatch_id"]
+    assert sales.post(f"/api/v1/sales/dispatches/{dispatch_id}/dispatch").status_code == 200
+    invoice = sales.post(f"/api/v1/sales/dispatches/{dispatch_id}/invoice").json()
+    assert float(invoice["gross_amount"]) == 15000 and invoice["status"] == "ISSUED"
+    assert sales.get(f"/api/v1/sales/orders/{so['so_id']}").json()["status"] == "SHIPPED"
+    chain = sales.get(f"/api/v1/sales/dispatches/{dispatch_id}/trace").json()
+    production = chain["lots"][0]["production"]
+    assert production["lot_no"] == lot["lot_no"] and production["compound_batches"][0][
+        "raw_material"] and production["metal_lots"][0]["raw_material"]
+    left = Fresh(make_client, "STORES").get(
+        f"{INV}/stock?store_id={fg_store['store_id']}").json()["items"]
+    assert [float(r["on_hand"]) for r in left] == [40]  # 97 packed, 7 sampled, 50 dispatched
+
     # traceability goes back through compound batch and insert lot to the raw-material lots
     trace = Fresh(make_client, "QA").get(f"{M}/lots/{lot['prod_lot_id']}/trace").json()
     assert trace["compound_batches"][0]["raw_material"] and trace["metal_lots"][0]["raw_material"]
@@ -71,3 +98,8 @@ def test_from_purchase_order_to_packed_finished_goods(make_client, api_database)
             ([lot["prod_lot_id"], wo["work_order_id"], w["batch"]],))}
     assert {"work_order.create", "prod_lot.start", "prod_lot.move", "prod_lot.pack",
             "batch.weigh", "batch.qa"} <= actions, actions
+    with psycopg.connect(api_database["owner"]) as conn:
+        sales_actions = {r[0] for r in conn.execute(
+            "select action from erp.audit_log where entity_id = any(%s)",
+            ([so["so_id"], dispatch_id, invoice["invoice_id"]],))}
+    assert {"so.create", "dispatch.create", "dispatch.confirm", "invoice.create"} <= sales_actions
