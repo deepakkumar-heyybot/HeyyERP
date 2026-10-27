@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=10, ge=0, le=100)
     log_level: str = "INFO"
     auth_base_url: str = "http://localhost:3001"
+    web_base_url: str = "http://localhost:5173"
     required_org_slug: str = "v-rub-suspensions"
     # Better Auth organization slug -> ERP tenant_id. Set as JSON, e.g.
     # ORG_TENANT_MAP={"v-rub-suspensions":"<tenant uuid>"}.

@@ -15,8 +15,8 @@ second identity.
   must require successful TOTP enrollment before ERP routes are accessible; the API
   must verify email, V-Rub membership, active organization, and `twoFactorEnabled` on
   every session. Frontend redirects alone are not an authorization control.
-- Org creation is disabled. Admins invite members and assign roles; invitation expiry
-  is also 10 minutes. Existing users accept the invitation with their existing account.
+- Org creation is disabled. Admins invite members and assign roles; invitations stay
+  valid for 7 days (604800 seconds) so a person can accept them in practice. Existing users accept the invitation with their existing account.
 - Database tables live in PostgreSQL schema `auth`, isolated from the ERP `erp` schema.
 - Email uses Resend SMTP; no API key is stored in source. The sender address must be
   verified in the Resend account. Set all values from `.env.example` in an ignored `.env`.

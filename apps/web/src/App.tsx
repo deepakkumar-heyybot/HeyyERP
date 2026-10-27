@@ -1,8 +1,9 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, Factory, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { authClient } from "./auth-client";
+import { fetchMe, homeFor } from "./api";
 
 type Mode = "signin" | "signup" | "forgot" | "reset" | "verify" | "totp-setup" | "two-factor";
 
@@ -33,9 +34,8 @@ function AuthCard({ mode }: { mode: Mode }) {
         if (params.id) {
           const accepted = await authClient.organization.acceptInvitation({ invitationId: params.id });
           if (accepted.error) throw new Error(accepted.error.message);
-          navigate("/totp-setup"); return;
         }
-        navigate("/totp-setup");
+        navigate(homeFor(await fetchMe()));
       } else if (mode === "signup") {
         const invitationId = query.get("invitationId");
         const callbackURL = invitationId ? `${location.origin}/accept-invitation/${encodeURIComponent(invitationId)}` : `${location.origin}/`;
@@ -57,7 +57,7 @@ function AuthCard({ mode }: { mode: Mode }) {
         if (result.error) throw new Error(result.error.message);
         setNotice("Password updated. You can now sign in.");
       } else if (mode === "verify") {
-        const result = await authClient.sendVerificationEmail({ email, callbackURL: `${location.origin}/totp-setup` });
+        const result = await authClient.sendVerificationEmail({ email, callbackURL: `${location.origin}/` });
         if (result.error) throw new Error(result.error.message);
         setNotice("If the account is awaiting verification, a fresh link is on its way. Links expire in 10 minutes.");
       } else if (mode === "totp-setup") {
@@ -111,12 +111,22 @@ function AuthCard({ mode }: { mode: Mode }) {
   </section>;
 }
 
+function AppHome() {
+  const navigate = useNavigate();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    fetchMe().then((me) => (me.access_granted ? setReady(true) : navigate(homeFor(me))), () => navigate("/"));
+  }, [navigate]);
+  if (!ready) return <section className="auth-card"><p className="subtitle">Checking your access…</p></section>;
+  return <section className="auth-card"><div className="card-icon"><ShieldCheck size={21} /></div><h1>Identity verified</h1><p className="subtitle">Your authentication is complete. ERP workspace integration is the next milestone.</p><Link className="primary" to="/">Sign out <ArrowRight size={17} /></Link></section>;
+}
+
 function App() {
   return <main className="page-shell"><header className="brand"><div className="brand-mark"><Factory size={21} /></div><div><strong>heyyERP</strong><span>V-Rub Suspensions</span></div></header><div className="auth-layout"><div className="welcome"><div className="eyebrow"><span className="status-dot" /> V-RUB WORKSPACE</div><h2>Operations,<br /><em>in sync.</em></h2><p>One secure sign-in for every part of your manufacturing operation.</p><div className="secure-note"><ShieldCheck size={18} /><span>Protected with verified email and two-factor authentication</span></div></div><Routes>
     <Route path="/" element={<AuthCard mode="signin" />} /><Route path="/register" element={<AuthCard mode="signup" />} />
     <Route path="/forgot-password" element={<AuthCard mode="forgot" />} /><Route path="/reset-password" element={<AuthCard mode="reset" />} />
     <Route path="/verify-email" element={<AuthCard mode="verify" />} /><Route path="/totp-setup" element={<AuthCard mode="totp-setup" />} />
-    <Route path="/two-factor" element={<AuthCard mode="two-factor" />} /><Route path="/app" element={<section className="auth-card"><div className="card-icon"><ShieldCheck size={21} /></div><h1>Identity verified</h1><p className="subtitle">Your authentication is complete. ERP workspace integration is the next milestone.</p><Link className="primary" to="/">Sign out <ArrowRight size={17} /></Link></section>} />
+    <Route path="/two-factor" element={<AuthCard mode="two-factor" />} /><Route path="/app" element={<AppHome />} />
     <Route path="/accept-invitation/:id" element={<AuthCard mode="signin" />} />
   </Routes></div><footer><span>© {new Date().getFullYear()} heyyERP</span><span>Secure access · V-Rub Suspensions</span></footer></main>;
 }

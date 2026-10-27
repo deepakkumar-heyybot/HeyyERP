@@ -54,7 +54,7 @@ export const auth = betterAuth({
     organization({
       allowUserToCreateOrganization: false,
       requireEmailVerificationOnInvitation: true,
-      invitationExpiresIn: 604800,
+      invitationExpiresIn: 604800, // 7 days; verification and reset links stay at 10 minutes
       async sendInvitationEmail(data) {
         const url = `${required("WEB_BASE_URL", "http://localhost:5173")}/accept-invitation/${encodeURIComponent(data.id)}`;
         await sendAuthEmail({

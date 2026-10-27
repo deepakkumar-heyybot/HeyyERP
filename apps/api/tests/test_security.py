@@ -36,7 +36,8 @@ def session(verified=True, two_factor=False):
 
 
 @pytest.fixture(autouse=True)
-def tenant_map(monkeypatch):
+def tenant_map(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)  # keep a developer's local .env out of the tests
     monkeypatch.setenv("ORG_TENANT_MAP", json.dumps({"v-rub-suspensions": str(TENANT)}))
     get_settings.cache_clear()
     yield
@@ -110,3 +111,16 @@ def test_fetch_session_signed_out_and_outage():
     with pytest.raises(HTTPException) as err:
         _call(lambda r: httpx.Response(502))
     assert err.value.status_code == 503
+
+
+def test_cors_allows_only_the_web_origin_with_credentials():
+    from heyyerp_api.main import app
+
+    client = TestClient(app)
+    ok = client.options("/api/v1/me", headers={"Origin": "http://localhost:5173",
+                                              "Access-Control-Request-Method": "GET"})
+    assert ok.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert ok.headers["access-control-allow-credentials"] == "true"
+    bad = client.options("/api/v1/me", headers={"Origin": "http://evil.example",
+                                               "Access-Control-Request-Method": "GET"})
+    assert "access-control-allow-origin" not in bad.headers

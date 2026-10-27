@@ -44,7 +44,7 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [x] Implement the Better Auth organization-level authentication features (confirmed complete by the project owner; implementation is present in `apps/auth`).
 - [x] Configure email/password, email verification, password reset, TOTP two-factor authentication, and the Resend SMTP mailer in the auth service.
 - [ ] Run and record end-to-end tests for sign-up, duplicate email, verification expiry/resend, sign-in, MFA, password reset, and sign-out.
-- [ ] Reconcile invitation expiry: `apps/auth/README.md` says 10 minutes, while `apps/auth/src/auth.ts` currently sets 7 days; confirm the intended rule and align implementation and documentation.
+- [x] Reconcile invitation expiry: decided 7 days (604800 s) for invitations, since 10 minutes is too short to accept one; verification and reset links stay at 10 minutes. `apps/auth/README.md` and `apps/auth/src/auth.ts` now agree (2026-10-27).
 - [ ] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
 - [ ] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
 - [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`. Built on `feature/api-session-middleware` (`security.py`, `GET /api/v1/me`, 11 unit tests, ruff and mypy clean); tick after review, merge and the live check below.
@@ -52,7 +52,7 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [x] Create the V-Rub `tenant` row and set `ORG_TENANT_MAP` in the API `.env` (done locally; repeat for staging and production). The `v-rub-suspensions` organization row was also created in `auth.organization`; there is still no seed script for it.
 - [x] Make the API connect as a non-owner PostgreSQL role: local role `heyyerp_app` (no superuser, no BYPASSRLS) created with table DML on `erp` and SELECT on `auth.member` / `auth.organization` only. Tested: without a tenant set 0 rows are visible, the own tenant shows 1, another tenant 0, and inserting a row for another tenant is rejected. Still needed: scripted role creation for other environments (with the migrations item), and the full tenant-isolation test suite.
 - [x] Decide the MFA policy: follow BRD section 9.4 — TOTP is mandatory only for ADMIN, MD and ACCOUNTS (decided by the project owner, 2026-10-27). `src/auth-contract.ts` now encodes this.
-- [ ] Align the web onboarding flow with the MFA policy: `apps/web/src/App.tsx` still sends every user to `/totp-setup` after sign-in; make TOTP enrollment required only for the three roles, and update the matching sentence in `apps/auth/README.md`.
+- [ ] Align the web onboarding flow with the MFA policy: built on `feature/web-mfa-flow` — after sign-in the web app calls `GET /api/v1/me` and only sends roles that must use MFA and have not enrolled to `/totp-setup`; `/app` re-checks access; API now allows CORS from `WEB_BASE_URL`. Tick after review and merge.
 - [ ] Add shop-floor OTP / PIN sign-in (BRD FR-ADM-06 and FR-ADM-07) before shop-floor users are onboarded; until then they use verified email and password.
 - [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes.
 
@@ -158,7 +158,7 @@ Use this checklist for every module before marking its phase item complete:
 Finish Phase 1 before any business module. In order:
 
 1. Fix the invitation-expiry mismatch (10 minutes in the README, 7 days in `apps/auth/src/auth.ts`).
-2. Align the web sign-in flow with the MFA policy (decided: BRD section 9.4).
+2. Review and merge the web MFA flow (built, see Phase 1).
 3. Review and merge the API session middleware (built and live-checked).
 4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
 5. Add database migrations so a clean database can be built from the repository.
