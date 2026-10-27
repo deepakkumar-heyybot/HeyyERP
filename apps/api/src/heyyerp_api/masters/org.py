@@ -8,42 +8,27 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import text
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
     Paging,
+    Strict,
     audit,
+    count,
     db_errors,
     not_found,
+    one,
     read_ctx,
     requires,
+    rows,
 )
 from heyyerp_api.masters.validation import clean_code, clean_gstin, reconcile_state
 
 router = APIRouter(prefix="/org", tags=["organization"])
 manage_org = requires("org.manage")
 Name = Field(min_length=1, max_length=120)
-
-
-class Strict(BaseModel):
-    # extra="forbid" also rejects a client-supplied tenant_id.
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-async def rows(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    return [dict(r) for r in (await ctx.session.execute(text(sql), params or {})).mappings().all()]
-
-
-async def one(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    found = await rows(ctx, sql, params)
-    return found[0] if found else None
-
-
-async def count(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> int:
-    return int((await ctx.session.execute(text(sql), params or {})).scalar_one())
 
 
 # ---------------------------------------------------------------- plants (units)

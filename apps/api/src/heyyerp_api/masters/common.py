@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +94,24 @@ async def audit(
             ),
         },
     )
+
+
+class Strict(BaseModel):
+    # extra="forbid" also rejects a client-supplied tenant_id.
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+async def rows(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    return [dict(r) for r in (await ctx.session.execute(text(sql), params or {})).mappings().all()]
+
+
+async def one(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    found = await rows(ctx, sql, params)
+    return found[0] if found else None
+
+
+async def count(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> int:
+    return int((await ctx.session.execute(text(sql), params or {})).scalar_one())
 
 
 def not_found(entity: str) -> HTTPException:
