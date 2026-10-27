@@ -7,6 +7,27 @@ This is the shared project checklist for the heyyERP backend. Work proceeds in p
 - `[x]` Complete and confirmed.
 - `[ ]` Not complete, or not yet verified.
 
+## Module status board
+
+Status as of 2026-10-27, from reading the repository (not from memory). `Done` = built and confirmed; `Partial` = some of it exists; `Not started` = only the database tables exist in `heyyERP_postgresql_schema.sql` (126 tables, tenant RLS policy generated for every `tenant_id` table). Update this table in the same change that ticks a phase item.
+
+| Module | Phase | Schema tables it will use | Status | Done so far | Next step |
+|---|---|---|---|---|---|
+| Project foundation | 0 | all | Partial | Git + `origin`, `.gitignore`, `CONTRIBUTING.md`, FastAPI scaffold with `/health/live` and `/health/ready`, schema applied in pgAdmin | Review schema vs BRD; add migrations (no Alembic yet); agree branch rules |
+| Authentication (Better Auth) | 1 | `auth.*` (Better Auth) | Partial | Email/password, email verification, reset, TOTP, organization plugin, Resend mailer, web sign-in screens, one Playwright spec | Record e2e results; fix invitation-expiry mismatch; decide MFA policy |
+| API tenant security | 1 | `tenant`, `app_user` (`auth_subject`) | Partial | `get_tenant_session` sets `app.tenant_id` for RLS; `src/auth-contract.ts` defines the principal | Build the API session middleware (nothing sets `request.state.tenant_id` yet); map organization to tenant; isolation tests |
+| Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor` | Not started | — | Start after Phase 1 gate |
+| Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Not started | — | — |
+| Product engineering | 4 | `item`, `item_unit_policy`, `bom`, `bom_line`, `route`, `route_stage` | Not started | — | — |
+| Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `grn*`, `purchase_return*`, `cash_purchase`, `vendor_rating` | Not started | — | — |
+| Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_transfer*`, `stock_count*` | Not started | — | — |
+| Manufacturing and production | 7 | `compound*`, `compound_batch`, `batch_weighing_line`, `prod_lot*`, `lot_consumption`, `work_order`, `shift_production`, `packing` | Not started | — | — |
+| Quality | 8 | `qa_inspection*`, `qa_measurement`, `ncr*`, `instrument`, `calibration` | Not started | — | — |
+| Sales and dispatch | 9 | `customer_rfq*`, `customer_quote*`, `price_list*`, `sales_order`, `so_*`, `schedule_import`, `dispatch*`, `challan*`, `customer_part_xref`, `scrap_sale` | Not started | — | — |
+| Finance and GST | 10 | `fiscal_period`, `journal*`, `supplier_bill*`, `bill_match`, `customer_invoice`, `inter_unit_invoice`, `payment*`, `gst_return_data`, `tds_entry` | Not started | — | — |
+| Maintenance, HR, Kaizen | 11 | `machine`, `mould`, `pm_*`, `breakdown`, `fixed_asset`, `depreciation*`, `employee`, `attendance`, `leave_*`, `appraisal`, `kaizen` | Not started | — | Payroll tables exist but payroll is out of BRD phase 1 |
+| Reports, integrations, AI | 12 | `integration_job`, `notification`, `outbox_event`, `idempotency_record`, `stored_file`, `audit_log` | Not started | — | — |
+
 ## Phase 0 — Project and database foundation
 
 - [x] Initialize Git on `main`, add the GitHub `origin`, and push the initial project snapshot.
@@ -26,6 +47,8 @@ This is the shared project checklist for the heyyERP backend. Work proceeds in p
 - [ ] Reconcile invitation expiry: `apps/auth/README.md` says 10 minutes, while `apps/auth/src/auth.ts` currently sets 7 days; confirm the intended rule and align implementation and documentation.
 - [ ] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
 - [ ] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
+- [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`; `get_tenant_session` already depends on it, but nothing populates it yet.
+- [ ] Decide the MFA policy: `mayAccessErp` in `src/auth-contract.ts` requires TOTP for every user, while BRD section 9.4 requires MFA only for ADMIN, MD and ACCOUNTS (shop-floor users get OTP or PIN). Align the contract, the web onboarding flow and the BRD.
 - [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes.
 
 ## Phase 2 — Organization and master data
@@ -127,4 +150,16 @@ Use this checklist for every module before marking its phase item complete:
 
 ## Current next work
 
-Finish the Phase 1 security/integration checks first—especially the invitation-expiry mismatch, end-to-end auth verification, and trusted organization-to-tenant mapping. Then begin Phase 2 Organization and Master Data APIs. The Phase 2 checklist should be ticked module by module only after tests pass and the reviewed changes are merged.
+Finish Phase 1 before any business module. In order:
+
+1. Fix the invitation-expiry mismatch (10 minutes in the README, 7 days in `apps/auth/src/auth.ts`).
+2. Decide the MFA policy (see Phase 1).
+3. Build the API session middleware and organization-to-tenant mapping.
+4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
+5. Add database migrations so a clean database can be built from the repository.
+
+Then begin Phase 2 (organization and master data). Tick items module by module only after tests pass and the reviewed change is merged.
+
+## Progress log
+
+- 2026-10-27: Added the module status board and two Phase 1 items (API session middleware, MFA policy) after reviewing the repository. No items newly ticked.
