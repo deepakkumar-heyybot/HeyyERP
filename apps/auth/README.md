@@ -18,6 +18,10 @@ second identity.
 - Org creation is disabled. Admins invite members and assign roles; invitations stay
   valid for 7 days (604800 seconds) so a person can accept them in practice. Existing users accept the invitation with their existing account.
 - Database tables live in PostgreSQL schema `auth`, isolated from the ERP `erp` schema.
+- While the mail domain is not set up, set `AUTH_SKIP_EMAIL_VERIFICATION=true` in `.env`: new accounts
+  are marked verified when they are created and no email is needed. The service refuses to start with
+  this flag when `NODE_ENV=production`. Accounts created before the flag was turned on stay
+  unverified; verify them with `make-admin --verify-email`.
 - In local development, if `RESEND_SMTP_PASSWORD` is empty the service does not fail: it prints each
   email (including its verification or reset link) in the auth terminal so the link can be opened.
   In production the missing key is an error.

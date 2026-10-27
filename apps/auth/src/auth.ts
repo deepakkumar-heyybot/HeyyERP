@@ -14,6 +14,17 @@ const required = (key: string, fallback?: string) => {
 const authSecret = process.env.BETTER_AUTH_SECRET ??
   (process.env.NODE_ENV === "production" ? undefined : "local-only-secret-change-this-before-production-123456");
 
+// Development switch for when no mail service is available yet (for example the DNS for the
+// sending domain is not set up): new accounts are marked verified at creation and no
+// verification email is attempted. It must never run in production.
+const skipEmailVerification = process.env.AUTH_SKIP_EMAIL_VERIFICATION === "true";
+if (skipEmailVerification && process.env.NODE_ENV === "production") {
+  throw new Error("AUTH_SKIP_EMAIL_VERIFICATION must not be enabled in production");
+}
+if (skipEmailVerification) {
+  console.warn("[auth] AUTH_SKIP_EMAIL_VERIFICATION is on: new accounts are verified without an email. Development only.");
+}
+
 export const auth = betterAuth({
   appName: "heyyERP · V-Rub Suspensions",
   baseURL: required("AUTH_BASE_URL", "http://localhost:3001"),
@@ -39,7 +50,7 @@ export const auth = betterAuth({
     }),
   },
   emailVerification: {
-    sendOnSignUp: true,
+    sendOnSignUp: !skipEmailVerification,
     sendOnSignIn: true,
     expiresIn: 600,
     autoSignInAfterVerification: false,
@@ -67,6 +78,9 @@ export const auth = betterAuth({
     }),
     twoFactor({ issuer: "heyyERP · V-Rub Suspensions", backupCodeOptions: { amount: 10, length: 10 } }),
   ],
+  databaseHooks: skipEmailVerification
+    ? { user: { create: { before: async (user) => ({ data: { ...user, emailVerified: true } }) } } }
+    : undefined,
   rateLimit: {
     enabled: true,
     window: 60,
