@@ -48,7 +48,9 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [ ] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
 - [ ] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
 - [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`; `get_tenant_session` already depends on it, but nothing populates it yet.
-- [ ] Decide the MFA policy: `mayAccessErp` in `src/auth-contract.ts` requires TOTP for every user, while BRD section 9.4 requires MFA only for ADMIN, MD and ACCOUNTS (shop-floor users get OTP or PIN). Align the contract, the web onboarding flow and the BRD.
+- [x] Decide the MFA policy: follow BRD section 9.4 — TOTP is mandatory only for ADMIN, MD and ACCOUNTS (decided by the project owner, 2026-10-27). `src/auth-contract.ts` now encodes this.
+- [ ] Align the web onboarding flow with the MFA policy: `apps/web/src/App.tsx` still sends every user to `/totp-setup` after sign-in; make TOTP enrollment required only for the three roles, and update the matching sentence in `apps/auth/README.md`.
+- [ ] Add shop-floor OTP / PIN sign-in (BRD FR-ADM-06 and FR-ADM-07) before shop-floor users are onboarded; until then they use verified email and password.
 - [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes.
 
 ## Phase 2 — Organization and master data
@@ -153,7 +155,7 @@ Use this checklist for every module before marking its phase item complete:
 Finish Phase 1 before any business module. In order:
 
 1. Fix the invitation-expiry mismatch (10 minutes in the README, 7 days in `apps/auth/src/auth.ts`).
-2. Decide the MFA policy (see Phase 1).
+2. Align the web sign-in flow with the MFA policy (decided: BRD section 9.4).
 3. Build the API session middleware and organization-to-tenant mapping.
 4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
 5. Add database migrations so a clean database can be built from the repository.
