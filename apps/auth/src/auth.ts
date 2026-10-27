@@ -67,7 +67,14 @@ export const auth = betterAuth({
     }),
     twoFactor({ issuer: "heyyERP · V-Rub Suspensions", backupCodeOptions: { amount: 10, length: 10 } }),
   ],
-  rateLimit: { enabled: true, window: 60, max: 10 },
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 10,
+    // The ERP API checks the session on every request from one server address, so a shared
+    // 10/minute limit would sign everyone out. Throttle the API itself instead (Phase 12).
+    customRules: { "/get-session": false },
+  },
   advanced: {
     cookiePrefix: "heyyerp",
     useSecureCookies: process.env.NODE_ENV === "production",

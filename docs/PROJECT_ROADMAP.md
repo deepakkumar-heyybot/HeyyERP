@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Live Phase 2 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 checks pass - plants, departments, stores, reference data, customers and vendors; role boundaries (STORES, SALES, PURCHASE, ADMIN with and without 2FA); tenant isolation against a second tenant; audit rows carry the real user; CORS preflight for PATCH. It also found a real bug, fixed on `fix/auth-session-ratelimit`: the auth service's 10-per-minute rate limit applied to the API's session lookups, so after 10 requests the API reported every user as signed out. Test data was deleted; 8 audit rows remain because the audit log is append-only.
 - 2026-10-27: Customers and vendors built on `feature/master-parties`; 54 API tests pass. Phase 2 code complete, awaiting review and merge of three branches.
 - 2026-10-27: Reference data (payment terms, tax codes, item categories, UOM) built on `feature/master-reference`; 43 API tests pass.
 - 2026-10-27: Phase 2 started on `feature/master-org`: plants, departments and stores APIs with shared master-data helpers; 36 API tests pass against a scratch database (two tenants, non-owner login). Not ticked until merged.

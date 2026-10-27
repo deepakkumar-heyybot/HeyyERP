@@ -124,3 +124,9 @@ def test_cors_allows_only_the_web_origin_with_credentials():
     bad = client.options("/api/v1/me", headers={"Origin": "http://evil.example",
                                                "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in bad.headers
+
+
+def test_a_throttled_auth_service_is_503_not_signed_out():
+    with pytest.raises(HTTPException) as err:
+        _call(lambda r: httpx.Response(429))
+    assert err.value.status_code == 503

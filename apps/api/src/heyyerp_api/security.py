@@ -51,7 +51,8 @@ async def fetch_auth_session(
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "Authentication service unavailable"
             ) from exc
-    if response.status_code >= 500:
+    if response.status_code >= 500 or response.status_code == 429:
+        # Throttled or down is not the same as signed out; never report it as a 401.
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "Authentication service unavailable"
         )
