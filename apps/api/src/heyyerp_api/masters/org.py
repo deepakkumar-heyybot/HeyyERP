@@ -464,7 +464,17 @@ async def update_store(
     merged = {**current, **changes}
     if any(merged[k] is None for k in ("name", "store_type", "active")):
         raise HTTPException(422, "Fields cannot be null")
-    # ponytail: no stock check yet; Phase 6 must block deactivating a store that holds stock.
+    if current["active"] and not merged["active"]:
+        busy = await one(
+            ctx, "SELECT (SELECT count(*) FROM erp.stock_balance WHERE store_id = :id AND "
+            "quantity_on_hand > 0) + (SELECT count(*) FROM erp.stock_transfer WHERE "
+            "status = 'DISPATCHED' AND (from_store_id = :id OR to_store_id = :id)) + "
+            "(SELECT count(*) FROM erp.stock_count WHERE store_id = :id AND status IN "
+            "('DRAFT', 'PENDING_APPROVAL')) AS n", {"id": store_id})
+        if busy and busy["n"]:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This store still holds stock, has a transfer on the way or a count open")
     row = await one(
         ctx,
         "UPDATE erp.store SET name = :name, store_type = :store_type, active = :active "

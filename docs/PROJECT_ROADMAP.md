@@ -20,7 +20,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 | Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Done | 12 roles, 37 permissions, module access, plant scope, admin users API, approval engine with rules, SLA, escalation and vendor onboarding | Delegation (FR-WF-03) and approving by e-mail/WhatsApp (FR-WF-04) are later; PO, indent and bill register with the engine when built |
 | Product engineering | 4 | `item`, `item_unit_policy`, `item_specification`, `bom`, `bom_line`, `engineering_change`, `route`, `route_stage`, `customer_part_xref` | Done | Items, plant policies, specifications, customer part numbers, versioned routes, BOMs with revisions, engineering changes and effective dates | Compound-to-item link (Phase 7), item cost, BOM explosion (MRP) |
 | Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `document_sequence` | Done | Indents, RFQs with quotes and comparison, purchase orders with approval, rules and receiving handoff | Goods receipt (Phase 6), purchase returns, cash purchase, vendor rating (BRD "should"), bill matching (Phase 10) |
-| Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_transfer*`, `stock_count*` | Not started | — | — |
+| Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_issue`, `stock_reservation`, `stock_transfer*`, `stock_count*` | Done | Goods receipts, QA release, FEFO/FIFO issue, reservations, transfers between stores and plants, counts with approval, FIFO valuation, lot trace, reconciliation | Serial numbers, labels/barcodes, purchase-return debit notes (Phase 10), short receipt on transfers |
 | Manufacturing and production | 7 | `compound*`, `compound_batch`, `batch_weighing_line`, `prod_lot*`, `lot_consumption`, `work_order`, `shift_production`, `packing` | Not started | — | — |
 | Quality | 8 | `qa_inspection*`, `qa_measurement`, `ncr*`, `instrument`, `calibration` | Not started | — | — |
 | Sales and dispatch | 9 | `customer_rfq*`, `customer_quote*`, `price_list*`, `sales_order`, `so_*`, `schedule_import`, `dispatch*`, `challan*`, `customer_part_xref`, `scrap_sale` | Not started | — | — |
@@ -93,10 +93,10 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 ## Phase 6 — Inventory and stores
 
-- [ ] Implement stock ledger, store balances, lot/serial traceability, and stock reservations.
-- [ ] Implement receipt, issue, inter-store/inter-plant transfer, and cycle count workflows.
-- [ ] Enforce no-negative-stock, FIFO valuation, and FEFO issue rules required by the BRD.
-- [ ] Test concurrent movements, stock reconciliation, lot genealogy, and tenant/plant access.
+- [x] Implement stock ledger, store balances, lot/serial traceability, and stock reservations: done on `dev` (`inventory/ledger.py`, `/inventory/stock`, `/lots/{id}/trace`, `/reservations`; append-only ledger with idempotency keys). Lot traceability is built; serial numbers and barcode labels are not.
+- [x] Implement receipt, issue, inter-store/inter-plant transfer, and cycle count workflows: done on `dev` (`/inventory/grns`, `/issues`, `/transfers` DRAFT-DISPATCHED-RECEIVED, `/counts` with the `count` approval; migration `0008`). A store that holds stock, has a transfer on the way or an open count cannot be deactivated.
+- [x] Enforce no-negative-stock, FIFO valuation, and FEFO issue rules required by the BRD: done (database CHECK plus row-locked balance; FIFO cost layers per plant and item, carried across plants by transfers; `issueRule` setting picks FEFO or FIFO; expired lots are blocked).
+- [x] Test concurrent movements, stock reconciliation, lot genealogy, and tenant/plant access: done in `tests/test_inventory_receipt.py`, `test_inventory_issue.py` (including ten simultaneous issues) and `test_inventory_transfer_count.py`.
 
 ## Phase 7 — Manufacturing and production
 
@@ -167,6 +167,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Phase 6 built on `dev`: stock ledger, goods receipts with QA release, FEFO/FIFO issue, reservations, transfers (between stores and plants, cost carried), cycle counts with approval, valuation, expiry and reorder reports, lot trace and reconciliation; migration `0008`. Open: serial numbers, barcode labels, short receipt on a transfer, debit notes for purchase returns (Phase 10). Apply `alembic upgrade head` and re-run the seed on existing databases.
 - 2026-10-27: Phase 5 built on `dev`: indents, RFQs, purchase orders and the receiving handoff; migration `0007`. Not built (BRD "should" or later phases): cash purchase (FR-PRC-09), purchase returns and debit notes (FR-PRC-08), vendor rating (FR-PRC-05), the goods receipt itself (Phase 6), PO amendment after approval.
 - 2026-10-27: Phase 4 built on `dev`: BOMs with revisions, engineering changes, effective dates and approval (171 API tests pass). Open design notes: BOM is per item, not per plant (plant applicability is the item's plant policy); rubber compounds are not linked to items yet (planned with Phase 7); the schema has no item cost or rate.
 - 2026-10-27: Phase 4 started: items, plant policies, specifications, customer part numbers and versioned production routes (METAL, MOULD, EXTR seeded from BRD 6.2); migration `0006`; 158 API tests pass.

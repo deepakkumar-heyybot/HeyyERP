@@ -198,7 +198,13 @@ def test_issue_validation_and_permissions(make_client):
         assert make_client(role).post(f"{INV}/issues", json=issue_body(w, "1")).status_code == 403, role
     for role in ("STORES", "PROD", "PLANT_HEAD", "MD"):
         assert make_client(role).post(f"{INV}/issues/plan", json=plan_body(w, "1")).status_code == 200
-    make_client("ADMIN").patch(f"/api/v1/org/stores/{w['store']['store_id']}", json={"active": False})
+    shut = make_client("ADMIN").patch(f"/api/v1/org/stores/{w['store']['store_id']}",
+                                      json={"active": False})
+    assert shut.status_code == 409  # still holds stock
+    assert make_client("STORES").post(f"{INV}/issues", json=issue_body(w, "99")).status_code == 201
+    assert make_client("STORES").post(f"{INV}/issues", json=issue_body(w, "1")).status_code == 201
+    assert make_client("ADMIN").patch(f"/api/v1/org/stores/{w['store']['store_id']}",
+                                      json={"active": False}).status_code == 200
     assert make_client("STORES").post(f"{INV}/issues", json=issue_body(w, "1")).status_code == 422
 
 
