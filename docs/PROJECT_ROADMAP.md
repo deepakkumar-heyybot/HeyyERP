@@ -16,7 +16,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 | Project foundation | 0 | all | Partial | Git + `origin`, `.gitignore`, `CONTRIBUTING.md`, FastAPI scaffold with `/health/live` and `/health/ready`, schema applied in pgAdmin | Review schema vs BRD; add migrations (no Alembic yet); agree branch rules |
 | Authentication (Better Auth) | 1 | `auth.*` (Better Auth) | Partial | Email/password, email verification, reset, TOTP, organization plugin, Resend mailer, web sign-in screens, one Playwright spec | Record e2e results; fix invitation-expiry mismatch; decide MFA policy |
 | API tenant security | 1 | `tenant`, `app_user` (`auth_subject`) | Done | Session middleware, tenant from server config, ERP profile and role/permissions from the database, MFA by ERP role, non-owner login, RLS and isolation tests | Production tenant mapping table when a second tenant arrives |
-| Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor` | Partial | Plants, departments, stores, reference data, customers and vendors: APIs, validation, audit, tests | Organization settings (`business_setting`); real V-Rub data |
+| Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor`, `business_setting` | Done | Plants, departments, stores, reference data, customers, vendors and the business rules: APIs, validation, audit, tests | V-Rub to confirm the real plants, GSTINs, departments, stores and units of measure |
 | Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Done | 12 roles, 37 permissions, module access, plant scope, admin users API, approval engine with rules, SLA, escalation and vendor onboarding | Delegation (FR-WF-03) and approving by e-mail/WhatsApp (FR-WF-04) are later; PO, indent and bill register with the engine when built |
 | Product engineering | 4 | `item`, `item_unit_policy`, `bom`, `bom_line`, `route`, `route_stage` | Not started | — | — |
 | Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `grn*`, `purchase_return*`, `cash_purchase`, `vendor_rating` | Not started | — | — |
@@ -58,7 +58,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 ## Phase 2 — Organization and master data
 
-- [ ] Define the approved organization-to-tenant mapping and organization settings.
+- [x] Define the approved organization-to-tenant mapping and organization settings: done on `dev` — the mapping is the `ORG_TENANT_MAP` setting (organization slug to tenant id), and the 17 BRD business rules plus two stated defaults are typed settings (`/api/v1/settings` readable by every member, `/api/v1/admin/settings/{key}` changeable by ADMIN only, with full history). Rules V-Rub has not answered (cash limit, minimum quotes, MD margin approval) show `AWAITING_DECISION` and are not enforced. Other modules read a rule with `business_rules.service.get_value`.
 - [x] Implement plants/business units with GSTIN, state, active status, and tenant-scoped unique codes: done on `dev` (`/api/v1/org/units`; GSTIN format and check-digit validation; state derived from GSTIN; cannot deactivate a plant with active stores or departments).
 - [x] Implement departments, parent-department relationships, and plant association: done on `dev` (`/api/v1/org/departments`; no cycles, no inactive parent or plant).
 - [x] Implement stores/warehouses under plants, including store type and active status: done on `dev` (`/api/v1/org/stores`; code unique per plant; no stores on inactive plants). Phase 6 must add the check that blocks deactivating a store that holds stock.
@@ -167,6 +167,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Business rules (BRD 6.1) built as typed, versioned settings; Phase 2 code complete (140 API tests pass).
 - 2026-10-27: Live Phase 3 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 pass - first ADMIN through `cli make-admin`, 2FA enrolment, admin creates ERP profiles, role permissions and modules, plant scope, vendor approval and rejection through the engine, idempotent decisions, SLA overdue flag, reminders and escalation, deactivated user refused on the next request. Test data removed; test ERP profiles stay as DEACTIVATED because the append-only audit log references them.
 - 2026-10-27: Phase 3 built on `dev`: database-driven roles and permissions, admin users, plant scope, and the approval engine (126 API tests pass). Commits now use deepak.kumar@heyybot.com.
 - 2026-10-27: All earlier feature branches were combined into the single working branch `dev`; new work is committed and pushed there only.

@@ -4,6 +4,7 @@ from heyyerp_api.admin.audit import router as admin_audit_router
 from heyyerp_api.admin.users import router as admin_users_router
 from heyyerp_api.api.health import router as health_router
 from heyyerp_api.api.me import router as me_router
+from heyyerp_api.business_rules.api import router as business_rules_router
 from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
 from heyyerp_api.masters.reference import router as reference_router
@@ -20,3 +21,4 @@ api_router.include_router(admin_users_router)
 api_router.include_router(admin_audit_router)
 api_router.include_router(approvals_router)
 api_router.include_router(approval_rules_router)
+api_router.include_router(business_rules_router)
