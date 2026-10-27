@@ -13,6 +13,7 @@ from heyyerp_api.inventory.transfers import router as transfers_router
 from heyyerp_api.manufacturing.batches import router as batches_router
 from heyyerp_api.manufacturing.compounds import router as compounds_router
 from heyyerp_api.manufacturing.equipment import router as equipment_router
+from heyyerp_api.manufacturing.orders import router as work_orders_router
 from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
 from heyyerp_api.masters.reference import router as reference_router
@@ -50,3 +51,4 @@ api_router.include_router(counts_router)
 api_router.include_router(compounds_router)
 api_router.include_router(batches_router)
 api_router.include_router(equipment_router)
+api_router.include_router(work_orders_router)
