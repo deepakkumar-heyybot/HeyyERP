@@ -35,6 +35,26 @@ def clean_code(value: str) -> str:
     return code
 
 
+ITEM_CODE_RE = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,29}$")
+HSN_RE = re.compile(r"^(\d{4}|\d{6}|\d{8})$")
+
+
+def clean_item_code(value: str) -> str:
+    code = value.strip().upper()
+    if not ITEM_CODE_RE.match(code):
+        raise ValueError("Item code must be 1-30 characters: A-Z, 0-9, '.', '/', '-' or '_'")
+    return code
+
+
+def clean_hsn(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    hsn = value.strip()
+    if not HSN_RE.match(hsn):
+        raise ValueError("HSN code must be 4, 6 or 8 digits")
+    return hsn
+
+
 def clean_gstin(value: str | None) -> str | None:
     if value is None or not value.strip():
         return None

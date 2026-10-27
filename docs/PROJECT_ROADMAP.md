@@ -79,7 +79,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 ## Phase 4 — Product engineering
 
-- [ ] Implement item/product definitions, UOM/category links, and item-to-plant policies.
+- [x] Implement item/product definitions, UOM/category links, and item-to-plant policies: done on `dev` (`/api/v1/product/items`): items with type, UoM, category, HSN (4/6/8 digits), shelf life and production route; per-plant policies (reorder point and quantity, default store) that make an item applicable at a plant, limited by the user's plant scope; technical specifications (typed limits such as Hardness 60-70 Shore A); customer part-number cross-reference. Type and UoM never change after creation; an item that is a component of a live BOM cannot be deactivated.
 - [ ] Implement revisions, BOM headers/lines, routing/operations, and technical specifications.
 - [ ] Implement engineering change history and approval/effective-date behavior.
 - [ ] Test BOM integrity, revision history, and plant-specific applicability.
@@ -167,6 +167,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Phase 4 started: items, plant policies, specifications, customer part numbers and versioned production routes (METAL, MOULD, EXTR seeded from BRD 6.2); migration `0006`; 158 API tests pass.
 - 2026-10-27: Business rules (BRD 6.1) built as typed, versioned settings; Phase 2 code complete (140 API tests pass).
 - 2026-10-27: Live Phase 3 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 pass - first ADMIN through `cli make-admin`, 2FA enrolment, admin creates ERP profiles, role permissions and modules, plant scope, vendor approval and rejection through the engine, idempotent decisions, SLA overdue flag, reminders and escalation, deactivated user refused on the next request. Test data removed; test ERP profiles stay as DEACTIVATED because the append-only audit log references them.
 - 2026-10-27: Phase 3 built on `dev`: database-driven roles and permissions, admin users, plant scope, and the approval engine (126 API tests pass). Commits now use deepak.kumar@heyybot.com.

@@ -38,7 +38,7 @@ REGISTRY: dict[str, DocumentType] = {}
 # The eight BRD document types plus vendor onboarding. Rules may be defined ahead of the module
 # that registers the type, so administrators can prepare the matrix.
 KNOWN_TYPES = frozenset(
-    {"indent", "po", "bill", "scrap", "count", "leave", "kaizen", "review", "vendor"}
+    {"indent", "po", "bill", "scrap", "count", "leave", "kaizen", "review", "vendor", "bom"}
 )
 
 

@@ -11,7 +11,10 @@ from typing import Any
 PERMISSIONS: dict[str, str] = {
     "org.manage": "Maintain plants, departments and stores (P2)",
     "refdata.manage": "Maintain payment terms, tax codes and item categories (P2)",
-    "customer.manage": "Maintain customers (P2)",
+    "customer.manage": "Maintain customers and their part-number cross-reference (P2)",
+    "item.manage": "Maintain items, plant policies and technical specifications (P4)",
+    "bom.manage": "Draft and revise bills of material and submit engineering changes (P4)",
+    "route.manage": "Define and revise production routes and their QA gates (P4)",
     "vendor.manage": "Onboard and maintain vendors",
     "indent.raise": "Raise purchase indents",
     "po.create": "Create purchase orders",
@@ -71,34 +74,37 @@ ROLES: dict[str, dict[str, Any]] = {
         "permissions": ["indent.raise", "po.create", "mfg.plan", "mfg.entry", "route.move",
                         "inv.count", "inv.issue", "kaizen.submit", "kaizen.manage", "leave.apply",
                         "scrap.sale", "mnt", "mnt.breakdown", "ai", "approval.view_all",
-                        "refdata.manage", "customer.manage"],
+                        "refdata.manage", "customer.manage", "item.manage", "bom.manage",
+                        "route.manage"],
     },
     "PURCHASE": {
         "name": "Purchase Manager",
         "modules": ["home", "approvals", "ai", "procurement", "inventory", "routes", "reports",
                     "kaizen"],
         "permissions": ["indent.raise", "po.create", "vendor.manage", "cash.purchase",
-                        "kaizen.submit", "leave.apply", "ai"],
+                        "kaizen.submit", "leave.apply", "ai", "item.manage"],
     },
     "STORES": {
         "name": "Stores In-charge",
         "modules": ["home", "approvals", "procurement", "inventory", "routes", "reports",
                     "kaizen"],
         "permissions": ["indent.raise", "grn.post", "inv.issue", "inv.transfer", "inv.count",
-                        "challan", "cash.purchase", "kaizen.submit", "leave.apply"],
+                        "challan", "cash.purchase", "kaizen.submit", "leave.apply", "item.manage"],
     },
     "QA": {
         "name": "Quality Head",
         "modules": ["home", "approvals", "quality", "routes", "inventory", "manufacturing",
                     "procurement", "reports", "kaizen"],
-        "permissions": ["qa.approve", "ncr", "indent.raise", "kaizen.submit", "leave.apply"],
+        "permissions": ["qa.approve", "ncr", "indent.raise", "kaizen.submit", "leave.apply",
+                        "item.manage", "bom.manage", "route.manage"],
     },
     "PROD": {
         "name": "Production Manager",
         "modules": ["home", "approvals", "ai", "routes", "manufacturing", "inventory", "quality",
                     "maintenance", "kaizen", "reports"],
         "permissions": ["mfg.plan", "mfg.entry", "route.move", "indent.raise", "inv.issue",
-                        "kaizen.submit", "leave.apply", "mnt.breakdown", "ai"],
+                        "kaizen.submit", "leave.apply", "mnt.breakdown", "ai", "item.manage",
+                        "bom.manage", "route.manage"],
     },
     "SALES": {
         "name": "Sales & Dispatch",
@@ -169,7 +175,38 @@ DEFAULT_RULES: list[dict[str, Any]] = [
      "steps": ["DEPT_HEAD", "PLANT_HEAD"]},
     {"name": "R-REV", "document_type": "review", "priority": 10, "sla_hours": 120,
      "steps": ["DEPT_HEAD", "HR"]},
-    # Not in the BRD matrix: vendor onboarding (FR-PRC-04) needs an approver too.
+    # Not in the BRD matrix. Vendor onboarding (FR-PRC-04) and engineering changes to a bill of
+    # material need approvers too; a design change is signed off by QA, then the Plant Head.
+    {"name": "R-BOM", "document_type": "bom", "priority": 10, "sla_hours": 72,
+     "steps": ["QA", "PLANT_HEAD"]},
     {"name": "R-VENDOR", "document_type": "vendor", "priority": 10, "sla_hours": 48,
      "steps": ["PLANT_HEAD"]},
 ]
+
+# Production routes from the V-Rub process-flow PDF (BRD section 6.2). Stage: (code, name, QA gate).
+# The last stage of each route is its end stage. Rubber lanes add batch weighing, mixing and
+# maturation upstream; those belong to compound batches (Phase 7), not to a route.
+DEFAULT_ROUTES: dict[str, dict[str, Any]] = {
+    "METAL": {"name": "Metal parts", "stages": [
+        ("MACHINING", "Machining", False),
+        ("QA_MACHINING", "QA check after machining", True),
+        ("PHOSPHATING", "Phosphating and barcoding", False),
+        ("QA_PHOSPHATING", "QA check and issue to painting", True),
+        ("PAINTING", "Painting", False),
+        ("QA_PAINTING", "QA check and issue to moulding", True),
+        ("READY_FOR_MOULDING", "Ready for moulding", False),
+    ]},
+    "MOULD": {"name": "Rubber moulded parts", "stages": [
+        ("MOULDING", "Moulding", False),
+        ("QA_MOULDING", "QA check", True),
+        ("PACKING", "Packing and barcoding", False),
+        ("FG_STORE", "FG store", False),
+    ]},
+    "EXTR": {"name": "Extruded and flocked parts", "stages": [
+        ("EXTRUSION", "Extrusion", False),
+        ("JOINT_OR_FLOCK", "Joint moulding or flocking", False),
+        ("QA_FINAL", "QA check", True),
+        ("PACKING", "Packing and barcoding", False),
+        ("FG_STORE", "FG store", False),
+    ]},
+}

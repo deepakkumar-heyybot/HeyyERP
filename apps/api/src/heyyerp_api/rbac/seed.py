@@ -11,6 +11,7 @@ from uuid import UUID
 import psycopg
 
 from heyyerp_api.rbac.catalog import (
+    DEFAULT_ROUTES,
     DEFAULT_RULES,
     PERMISSIONS,
     ROLES,
@@ -89,9 +90,30 @@ def seed_default_rules(
             )
 
 
+def seed_default_routes(conn: psycopg.Connection[Any], tenant_id: UUID | str) -> None:
+    for code, spec in DEFAULT_ROUTES.items():
+        if conn.execute(
+            "SELECT 1 FROM erp.route WHERE tenant_id = %s AND code = %s", (tenant_id, code)
+        ).fetchone():
+            continue
+        route = conn.execute(
+            "INSERT INTO erp.route(tenant_id, code, name, version) VALUES (%s, %s, %s, 1) "
+            "RETURNING route_id", (tenant_id, code, spec["name"]),
+        ).fetchone()
+        assert route is not None
+        last = len(spec["stages"])
+        for sequence, (stage_code, stage_name, qa_gate) in enumerate(spec["stages"], start=1):
+            conn.execute(
+                "INSERT INTO erp.route_stage(tenant_id, route_id, sequence_no, stage_code, "
+                "stage_name, is_qa_gate, is_end) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (tenant_id, route[0], sequence, stage_code, stage_name, qa_gate, sequence == last),
+            )
+
+
 def seed_tenant(conn: psycopg.Connection[Any], tenant_id: UUID | str) -> None:
     role_ids = seed_roles(conn, tenant_id)
     seed_default_rules(conn, tenant_id, role_ids)
+    seed_default_routes(conn, tenant_id)
 
 
 def create_app_user(
