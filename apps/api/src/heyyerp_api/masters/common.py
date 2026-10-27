@@ -47,6 +47,17 @@ def requires(permission: str) -> Callable[..., Awaitable[Ctx]]:
     return dependency
 
 
+def requires_module(module: str) -> Callable[..., Awaitable[Ctx]]:
+    """Sign-in plus access to a module (what the role's module list shows in the menu)."""
+
+    async def dependency(ctx: Ctx = Depends(read_ctx)) -> Ctx:
+        if module not in ctx.principal.profile.modules:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Your role has no access to {module}")
+        return ctx
+
+    return dependency
+
+
 class Paging:
     def __init__(self, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)) -> None:
         self.limit, self.offset = limit, offset

@@ -86,7 +86,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 ## Phase 5 — Procurement
 
-- [ ] Implement purchase indents/requisitions and approval handoff.
+- [x] Implement purchase indents/requisitions and approval handoff: done on `dev` (`/api/v1/procurement/indents`): numbered `IND-26-0001` (financial year April to March, restarts each year, gap-free), types BOM / consumable / capital with the item types each may request, capital lines carry a description and value; draft, edit by requester only, submit to the approval engine (BOM and consumable by R-IND, capital banded by total value: R-IND-CAP-1 up to 25 lakh, R-IND-CAP-2 above, both proposals); approved, rejected, cancelled. Visibility: the procurement module sees all (within plant scope), others only their own. Migration `0007` adds the number counter, `purchase_order.rfq_id` and status checks.
 - [ ] Implement RFQs, supplier invitations/quotes, comparison, and purchase orders.
 - [ ] Implement purchase order status/history and receiving handoff to inventory.
 - [ ] Test authorization, approval thresholds, duplicate submissions, and order-to-receipt references.

@@ -157,6 +157,14 @@ LAKH = 100_000
 DEFAULT_RULES: list[dict[str, Any]] = [
     {"name": "R-IND", "document_type": "indent", "priority": 10, "sla_hours": 24,
      "steps": ["DEPT_HEAD", "PLANT_HEAD"]},
+    # Capital indents are banded by value (BRD 5.1); BOM and consumable indents have no amount and
+    # fall through to R-IND. Proposal until V-Rub returns workflow sheet 3.
+    {"name": "R-IND-CAP-1", "document_type": "indent", "priority": 5, "amount_max": 25 * LAKH,
+     "sla_hours": 72, "steps": ["DEPT_HEAD", "PLANT_HEAD"]},
+    # A lower bound keeps this rule off documents without an amount (BOM and consumable indents).
+    {"name": "R-IND-CAP-2", "document_type": "indent", "priority": 6,
+     "amount_min": 25 * LAKH + 0.01, "sla_hours": 72,
+     "steps": ["DEPT_HEAD", "PLANT_HEAD", "MD"]},
     {"name": "R-PO-1", "document_type": "po", "priority": 10, "amount_max": 5 * LAKH,
      "sla_hours": 24, "steps": ["PURCHASE"]},
     {"name": "R-PO-2", "document_type": "po", "priority": 20, "amount_max": 25 * LAKH,
