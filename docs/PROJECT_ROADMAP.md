@@ -145,12 +145,12 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 Use this checklist for every module before marking its phase item complete:
 
 - [ ] Confirm the module scope against BRD requirements and document any approved assumptions.
-- [ ] Implement changes on a focused branch (for example `feature/master-data-plants`).
+- [ ] Commit the changes to the single working branch `dev` (project owner's decision, 2026-10-27: no more per-feature branches).
 - [ ] Add/update migrations, API contract, validation, authorization, tenant scoping, and audit behavior where applicable.
 - [ ] Run module tests and relevant regression/end-to-end tests; record the commands and results in the pull request.
 - [ ] Review the diff for secrets, unrelated files, migration conflicts, and compatibility with dependent modules.
-- [ ] Push the feature branch and open a pull request; request teammate/senior review.
-- [ ] Merge only after approval and passing checks; pull the merged `main` locally.
+- [ ] Push `dev`; open a pull request from `dev` to `main` when a group of modules is ready for review.
+- [ ] Merge to `main` only after approval and passing checks.
 - [ ] Update this roadmap in the same reviewed change or a small follow-up PR, then push it.
 
 ## Current next work
@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: All earlier feature branches were combined into the single working branch `dev`; new work is committed and pushed there only.
 - 2026-10-27: Live Phase 2 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 checks pass - plants, departments, stores, reference data, customers and vendors; role boundaries (STORES, SALES, PURCHASE, ADMIN with and without 2FA); tenant isolation against a second tenant; audit rows carry the real user; CORS preflight for PATCH. It also found a real bug, fixed on `fix/auth-session-ratelimit`: the auth service's 10-per-minute rate limit applied to the API's session lookups, so after 10 requests the API reported every user as signed out. Test data was deleted; 8 audit rows remain because the audit log is append-only.
 - 2026-10-27: Customers and vendors built on `feature/master-parties`; 54 API tests pass. Phase 2 code complete, awaiting review and merge of three branches.
 - 2026-10-27: Reference data (payment terms, tax codes, item categories, UOM) built on `feature/master-reference`; 43 API tests pass.
