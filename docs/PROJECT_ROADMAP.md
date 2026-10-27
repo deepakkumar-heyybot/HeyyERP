@@ -157,11 +157,9 @@ Use this checklist for every module before marking its phase item complete:
 
 Finish Phase 1 before any business module. In order:
 
-1. Fix the invitation-expiry mismatch (10 minutes in the README, 7 days in `apps/auth/src/auth.ts`).
-2. Review and merge the web MFA flow (built, see Phase 1).
-3. Review and merge the API session middleware (built and live-checked).
-4. Write the tenant-isolation tests, and run and record the auth end-to-end tests.
-5. Review and merge the migrations and tenant-isolation tests (built), then run and record the auth end-to-end tests.
+1. Review and merge the four open branches, in this order: `docs/module-status-board`, `feature/api-session-middleware`, `feature/web-mfa-flow`, `feature/db-migrations`. Then tick the items they cover.
+2. Run and record the auth end-to-end tests (needs a mail inbox or the auth service's test mail mode).
+3. Add shop-floor OTP / PIN sign-in before shop-floor users are onboarded.
 
 Then begin Phase 2 (organization and master data). Tick items module by module only after tests pass and the reviewed change is merged.
 
