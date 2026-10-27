@@ -115,5 +115,27 @@ async def count(ctx: Ctx, sql: str, params: dict[str, Any] | None = None) -> int
     return int((await ctx.session.execute(text(sql), params or {})).scalar_one())
 
 
+def scope_clause(ctx: Ctx, column: str, allow_null: bool = False) -> tuple[str, dict[str, Any]]:
+    """SQL limiting rows to the caller's plants (FR-ADM-04). Empty for all-plant users.
+
+    allow_null lets rows that belong to no plant (organization-wide) through, for reads only.
+    """
+    scope = ctx.principal.profile.unit_ids
+    if scope is None:
+        return "", {}
+    clause = f"{column} = ANY(CAST(:scope AS uuid[]))"
+    return (f"({column} IS NULL OR {clause})" if allow_null else clause), {"scope": list(scope)}
+
+
+def and_(clause: str) -> str:
+    return f" AND {clause}" if clause else ""
+
+
+def require_in_scope(ctx: Ctx, unit_id: UUID | None) -> None:
+    """Writes must target one of the caller's plants; organization-wide needs all plants."""
+    if not ctx.principal.may_see_unit(unit_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Outside your plant scope")
+
+
 def not_found(entity: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{entity} not found")

@@ -15,14 +15,17 @@ from heyyerp_api.masters.common import (
     Page,
     Paging,
     Strict,
+    and_,
     audit,
     count,
     db_errors,
     not_found,
     one,
     read_ctx,
+    require_in_scope,
     requires,
     rows,
+    scope_clause,
 )
 from heyyerp_api.masters.validation import clean_code, clean_gstin, reconcile_state
 
@@ -72,8 +75,12 @@ UNIT_COLS = "unit_id, code, name, gstin, state_code, active"
 async def list_units(
     active: bool | None = None, page: Paging = Depends(), ctx: Ctx = Depends(read_ctx)
 ) -> Page[UnitOut]:
-    where = "WHERE active = :active" if active is not None else ""
-    params: dict[str, Any] = {"active": active, "limit": page.limit, "offset": page.offset}
+    clause, scope_params = scope_clause(ctx, "unit_id")
+    conditions = (["active = :active"] if active is not None else []) + ([clause] if clause else [])
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params: dict[str, Any] = {
+        "active": active, "limit": page.limit, "offset": page.offset, **scope_params,
+    }
     items = await rows(
         ctx,
         f"SELECT {UNIT_COLS} FROM erp.unit {where} ORDER BY code LIMIT :limit OFFSET :offset",
@@ -86,7 +93,11 @@ async def list_units(
 
 @router.get("/units/{unit_id}", response_model=UnitOut)
 async def get_unit(unit_id: UUID, ctx: Ctx = Depends(read_ctx)) -> UnitOut:
-    row = await one(ctx, f"SELECT {UNIT_COLS} FROM erp.unit WHERE unit_id = :id", {"id": unit_id})
+    clause, scope_params = scope_clause(ctx, "unit_id")
+    row = await one(
+        ctx, f"SELECT {UNIT_COLS} FROM erp.unit WHERE unit_id = :id{and_(clause)}",
+        {"id": unit_id, **scope_params},
+    )
     if row is None:
         raise not_found("Plant")
     return UnitOut(**row)
@@ -94,6 +105,10 @@ async def get_unit(unit_id: UUID, ctx: Ctx = Depends(read_ctx)) -> UnitOut:
 
 @router.post("/units", response_model=UnitOut, status_code=status.HTTP_201_CREATED)
 async def create_unit(body: UnitIn, ctx: Ctx = Depends(manage_org)) -> UnitOut:
+    if ctx.principal.profile.unit_ids is not None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Creating a plant needs access to all plants"
+        )
     with db_errors("Plant code or GSTIN"):
         row = await one(
             ctx,
@@ -110,8 +125,10 @@ async def create_unit(body: UnitIn, ctx: Ctx = Depends(manage_org)) -> UnitOut:
 async def update_unit(
     unit_id: UUID, body: UnitPatch, ctx: Ctx = Depends(manage_org)
 ) -> UnitOut:
+    clause, scope_params = scope_clause(ctx, "unit_id")
     current = await one(
-        ctx, f"SELECT {UNIT_COLS} FROM erp.unit WHERE unit_id = :id FOR UPDATE", {"id": unit_id}
+        ctx, f"SELECT {UNIT_COLS} FROM erp.unit WHERE unit_id = :id{and_(clause)} FOR UPDATE",
+        {"id": unit_id, **scope_params},
     )
     if current is None:
         raise not_found("Plant")
@@ -227,9 +244,13 @@ async def list_departments(
         conditions.append("active = :active")
     if unit_id is not None:
         conditions.append("unit_id = :unit_id")
+    clause, scope_params = scope_clause(ctx, "unit_id", allow_null=True)
+    if clause:
+        conditions.append(clause)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     params: dict[str, Any] = {
         "active": active, "unit_id": unit_id, "limit": page.limit, "offset": page.offset,
+        **scope_params,
     }
     sql_params = {k: v for k, v in params.items() if k in {"limit", "offset"} or f":{k}" in where}
     items = await rows(
@@ -247,9 +268,10 @@ async def list_departments(
 
 @router.get("/departments/{department_id}", response_model=DepartmentOut)
 async def get_department(department_id: UUID, ctx: Ctx = Depends(read_ctx)) -> DepartmentOut:
+    clause, scope_params = scope_clause(ctx, "unit_id", allow_null=True)
     row = await one(
-        ctx, f"SELECT {DEPT_COLS} FROM erp.department WHERE department_id = :id",
-        {"id": department_id},
+        ctx, f"SELECT {DEPT_COLS} FROM erp.department WHERE department_id = :id{and_(clause)}",
+        {"id": department_id, **scope_params},
     )
     if row is None:
         raise not_found("Department")
@@ -260,6 +282,7 @@ async def get_department(department_id: UUID, ctx: Ctx = Depends(read_ctx)) -> D
 async def create_department(
     body: DepartmentIn, ctx: Ctx = Depends(manage_org)
 ) -> DepartmentOut:
+    require_in_scope(ctx, body.unit_id)
     await require_active_unit(ctx, body.unit_id)
     await require_active_parent(ctx, body.parent_department_id, None)
     with db_errors("Department code"):
@@ -279,9 +302,12 @@ async def create_department(
 async def update_department(
     department_id: UUID, body: DepartmentPatch, ctx: Ctx = Depends(manage_org)
 ) -> DepartmentOut:
+    clause, scope_params = scope_clause(ctx, "unit_id")
     current = await one(
-        ctx, f"SELECT {DEPT_COLS} FROM erp.department WHERE department_id = :id FOR UPDATE",
-        {"id": department_id},
+        ctx,
+        f"SELECT {DEPT_COLS} FROM erp.department WHERE department_id = :id{and_(clause)} "
+        "FOR UPDATE",
+        {"id": department_id, **scope_params},
     )
     if current is None:
         raise not_found("Department")
@@ -290,6 +316,7 @@ async def update_department(
     if merged["name"] is None or merged["active"] is None:
         raise HTTPException(422, "name and active cannot be null")
     if "unit_id" in changes:
+        require_in_scope(ctx, merged["unit_id"])
         await require_active_unit(ctx, merged["unit_id"])
     if "parent_department_id" in changes:
         await require_active_parent(ctx, merged["parent_department_id"], department_id)
@@ -357,21 +384,26 @@ async def list_stores(
 ) -> Page[StoreOut]:
     filters = {"active": active, "unit_id": unit_id, "store_type": store_type}
     used = {k: v for k, v in filters.items() if v is not None}
-    where = ("WHERE " + " AND ".join(f"{k} = :{k}" for k in used)) if used else ""
+    clause, scope_params = scope_clause(ctx, "unit_id")
+    conditions = [f"{k} = :{k}" for k in used] + ([clause] if clause else [])
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params = {**used, **scope_params}
     items = await rows(
         ctx,
         f"SELECT {STORE_COLS} FROM erp.store {where} ORDER BY code LIMIT :limit OFFSET :offset",
-        {**used, "limit": page.limit, "offset": page.offset},
+        {**params, "limit": page.limit, "offset": page.offset},
     )
-    total = await count(ctx, f"SELECT count(*) FROM erp.store {where}", used)
+    total = await count(ctx, f"SELECT count(*) FROM erp.store {where}", params)
     return Page(items=[StoreOut(**i) for i in items], total=total, limit=page.limit,
                 offset=page.offset)
 
 
 @router.get("/stores/{store_id}", response_model=StoreOut)
 async def get_store(store_id: UUID, ctx: Ctx = Depends(read_ctx)) -> StoreOut:
+    clause, scope_params = scope_clause(ctx, "unit_id")
     row = await one(
-        ctx, f"SELECT {STORE_COLS} FROM erp.store WHERE store_id = :id", {"id": store_id}
+        ctx, f"SELECT {STORE_COLS} FROM erp.store WHERE store_id = :id{and_(clause)}",
+        {"id": store_id, **scope_params},
     )
     if row is None:
         raise not_found("Store")
@@ -380,6 +412,7 @@ async def get_store(store_id: UUID, ctx: Ctx = Depends(read_ctx)) -> StoreOut:
 
 @router.post("/stores", response_model=StoreOut, status_code=status.HTTP_201_CREATED)
 async def create_store(body: StoreIn, ctx: Ctx = Depends(manage_org)) -> StoreOut:
+    require_in_scope(ctx, body.unit_id)
     await require_active_unit(ctx, body.unit_id)
     with db_errors("Store code in this plant"):
         row = await one(
@@ -398,9 +431,10 @@ async def create_store(body: StoreIn, ctx: Ctx = Depends(manage_org)) -> StoreOu
 async def update_store(
     store_id: UUID, body: StorePatch, ctx: Ctx = Depends(manage_org)
 ) -> StoreOut:
+    clause, scope_params = scope_clause(ctx, "unit_id")
     current = await one(
-        ctx, f"SELECT {STORE_COLS} FROM erp.store WHERE store_id = :id FOR UPDATE",
-        {"id": store_id},
+        ctx, f"SELECT {STORE_COLS} FROM erp.store WHERE store_id = :id{and_(clause)} FOR UPDATE",
+        {"id": store_id, **scope_params},
     )
     if current is None:
         raise not_found("Store")
