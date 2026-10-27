@@ -17,7 +17,7 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 | Authentication (Better Auth) | 1 | `auth.*` (Better Auth) | Partial | Email/password, email verification, reset, TOTP, organization plugin, Resend mailer, web sign-in screens, one Playwright spec | Record e2e results; fix invitation-expiry mismatch; decide MFA policy |
 | API tenant security | 1 | `tenant`, `app_user` (`auth_subject`) | Done | Session middleware, tenant from server config, ERP profile and role/permissions from the database, MFA by ERP role, non-owner login, RLS and isolation tests | Production tenant mapping table when a second tenant arrives |
 | Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor` | Partial | Plants, departments, stores, reference data, customers and vendors: APIs, validation, audit, tests | Organization settings (`business_setting`); real V-Rub data |
-| Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Partial | 12 roles, 37 permissions, module access, admin users API, DB-driven permission checks | Approval engine (rules, routing, SLA, escalation) |
+| Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Done | 12 roles, 37 permissions, module access, plant scope, admin users API, approval engine with rules, SLA, escalation and vendor onboarding | Delegation (FR-WF-03) and approving by e-mail/WhatsApp (FR-WF-04) are later; PO, indent and bill register with the engine when built |
 | Product engineering | 4 | `item`, `item_unit_policy`, `bom`, `bom_line`, `route`, `route_stage` | Not started | — | — |
 | Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `grn*`, `purchase_return*`, `cash_purchase`, `vendor_rating` | Not started | — | — |
 | Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_transfer*`, `stock_count*` | Not started | — | — |
@@ -72,8 +72,8 @@ Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means
 
 - [x] Define ERP roles, module access, action permissions, and plant/unit scope from the BRD: done on `dev` — 12 roles, 37 permissions and module access (`rbac/catalog.py`, seeded by `python -m heyyerp_api.cli seed`); admin API manages users and their plant scope (`/api/v1/admin/users`); plant scope (FR-ADM-04) is enforced on plant, department and store reads and writes (an out-of-scope record is 404, a write outside scope is 403).
 - [x] Enforce permissions in the API (not only in the frontend): done on `dev` — roles, permissions and modules are rows in the database (`erp.role`, `role_permission`, `role_module`), loaded per request from the caller's ERP profile (`erp.app_user`); no permission is taken from the browser or Better Auth. Every existing endpoint uses it, and `/me` shows the caller their permissions and modules. MFA is keyed to the ERP role.
-- [ ] Implement configurable approval rules, approval instances/actions, SLA tracking, and audit history.
-- [ ] Test approver routing, role-based decisions, rejection, escalation, and rule changes while documents are in flight.
+- [x] Implement configurable approval rules, approval instances/actions, SLA tracking, and audit history: done on `dev` (`/api/v1/approvals`, `/api/v1/admin/approval-rules`). Rules are data: value band, priority, steps by role, named user or department head, and an SLA; the route is frozen onto each document at submission. Leading steps held by the requester's role are skipped (all skipped = approved on the spot); decisions lock the row, are idempotent by `Idempotency-Key`, and refuse a stale step; only ADMIN may override a step (logged); nobody decides their own submission; a rejection needs a note. SLA is tracked per step (`due_at`, `overdue`); `POST /approvals/sla-sweep` queues reminders at 50% and 90% and escalates past 100% (to the Plant Head, or the MD if it is already with the Plant Head), once per step. Events go to the outbox table and every action to the audit log. First real consumer: vendor onboarding (`vendor` documents). PO, indent, bill and the other types register the same way when their modules are built.
+- [x] Test approver routing, role-based decisions, rejection, escalation, and rule changes while documents are in flight: done in `tests/test_approvals.py` (30 tests: value-band boundaries, department head and fallback, skip and collapse, wrong role, override, rejection, idempotent replay, stale step, a real two-approver race, rule edit and retire while in flight, named-user approver, SLA reminders and escalation sent once, vendor approve and reject, tenant isolation).
 
 ## Phase 4 — Product engineering
 
@@ -155,7 +155,7 @@ Use this checklist for every module before marking its phase item complete:
 
 ## Current next work
 
-Phase 1 and Phase 2 code is complete on `dev`; Phase 3 is in progress (roles and permissions done; plant-scope enforcement and the approval engine next). Open items before business modules:
+Phases 1 to 3 are built on `dev`. Open items before business modules:
 
 1. Review and merge the four open branches, in this order: `docs/module-status-board`, `feature/api-session-middleware`, `feature/web-mfa-flow`, `feature/db-migrations`. Then tick the items they cover.
 2. Run and record the auth end-to-end tests (needs a mail inbox or the auth service's test mail mode).
@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Phase 3 built on `dev`: database-driven roles and permissions, admin users, plant scope, and the approval engine (126 API tests pass). Commits now use deepak.kumar@heyybot.com.
 - 2026-10-27: All earlier feature branches were combined into the single working branch `dev`; new work is committed and pushed there only.
 - 2026-10-27: Live Phase 2 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 checks pass - plants, departments, stores, reference data, customers and vendors; role boundaries (STORES, SALES, PURCHASE, ADMIN with and without 2FA); tenant isolation against a second tenant; audit rows carry the real user; CORS preflight for PATCH. It also found a real bug, fixed on `fix/auth-session-ratelimit`: the auth service's 10-per-minute rate limit applied to the API's session lookups, so after 10 requests the API reported every user as signed out. Test data was deleted; 8 audit rows remain because the audit log is append-only.
 - 2026-10-27: Customers and vendors built on `feature/master-parties`; 54 API tests pass. Phase 2 code complete, awaiting review and merge of three branches.

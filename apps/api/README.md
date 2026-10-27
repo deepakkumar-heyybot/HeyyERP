@@ -70,6 +70,15 @@ python -m heyyerp_api.cli make-admin --tenant v-rub-suspensions --email person@v
 that, administrators create other users through `POST /api/v1/admin/users` (email, role, plant
 scope). A person without an ERP profile can sign in but every ERP endpoint answers 403.
 
+## Approvals
+
+One engine routes every document type. A module makes its documents approvable by registering a
+`DocumentType` (how to load it, who may submit it, what happens when it is approved or rejected)
+in `heyyerp_api/workflow/registry.py`; `workflow/documents.py` shows the vendor example. Rules
+(value band, steps, SLA) are edited through `/api/v1/admin/approval-rules` and only affect
+documents submitted afterwards. `POST /api/v1/approvals/sla-sweep` queues reminders and
+escalations and is safe to run repeatedly; a scheduler will call it in Phase 12.
+
 ## Tests
 
 `pytest` runs the unit tests. The database tests (clean-database migration, tenant isolation

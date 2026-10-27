@@ -60,7 +60,9 @@ EVERYTHING = "*"
 ROLES: dict[str, dict[str, Any]] = {
     "ADMIN": {"name": "System admin", "modules": EVERYTHING, "permissions": EVERYTHING},
     "MD": {"name": "Managing Director", "modules": EVERYTHING,
-           "permissions": EVERYTHING, "except": {"admin"}},  # cannot change admin settings
+           "permissions": EVERYTHING,
+           # BRD: the MD cannot change admin settings, and only ADMIN overrides an approval step
+           "except": {"admin", "approval.override"}},
     "PLANT_HEAD": {
         "name": "Plant Head",
         "modules": ["home", "approvals", "ai", "routes", "sales", "procurement", "inventory",

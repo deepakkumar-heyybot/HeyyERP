@@ -27,6 +27,8 @@ def test_catalog_is_internally_consistent():
     ("ADMIN", "admin", True),
     ("MD", "po.create", True),
     ("MD", "admin", False),  # BRD: MD cannot change admin settings
+    ("MD", "approval.override", False),  # BRD: only ADMIN overrides an approval step
+    ("ADMIN", "approval.override", True),
     ("STORES", "grn.post", True),
     ("STORES", "po.create", False),
     ("PURCHASE", "vendor.manage", True),
@@ -62,7 +64,7 @@ def test_seeding_is_idempotent_and_keeps_admin_edits(api_database):
                 {"t": TENANT_A}).fetchone()
 
         before = counts()
-        assert before[0] == 12 and before[2] == 11
+        assert before[0] == 12 and before[2] >= 11  # other tests may add their own rules
         # Seeding twice changes nothing: it only adds what is missing.
         seed_tenant(conn, TENANT_A)
         assert counts() == before

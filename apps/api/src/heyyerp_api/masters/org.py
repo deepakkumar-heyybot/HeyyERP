@@ -172,6 +172,7 @@ class DepartmentIn(Strict):
     name: str = Name
     unit_id: UUID | None = None
     parent_department_id: UUID | None = None
+    head_role_code: str | None = None  # the role that approves for this department
 
     _code = field_validator("code")(clean_code)
 
@@ -180,6 +181,7 @@ class DepartmentPatch(Strict):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     unit_id: UUID | None = None
     parent_department_id: UUID | None = None
+    head_role_code: str | None = None
     active: bool | None = None
 
 
@@ -189,10 +191,23 @@ class DepartmentOut(BaseModel):
     name: str
     unit_id: UUID | None
     parent_department_id: UUID | None
+    head_role_code: str | None
     active: bool
 
 
-DEPT_COLS = "department_id, code, name, unit_id, parent_department_id, active"
+DEPT_COLS = (
+    "department_id, code, name, unit_id, parent_department_id, active, "
+    "(SELECT r.code FROM erp.role r WHERE r.role_id = head_role_id) AS head_role_code"
+)
+
+
+async def head_role_id(ctx: Ctx, code: str | None) -> UUID | None:
+    if code is None:
+        return None
+    role = await one(ctx, "SELECT role_id FROM erp.role WHERE code = :c", {"c": code.upper()})
+    if role is None:
+        raise HTTPException(422, f"Unknown role {code}")
+    return role["role_id"]  # type: ignore[no-any-return]
 
 
 async def require_active_unit(ctx: Ctx, unit_id: UUID | None) -> None:
@@ -285,13 +300,14 @@ async def create_department(
     require_in_scope(ctx, body.unit_id)
     await require_active_unit(ctx, body.unit_id)
     await require_active_parent(ctx, body.parent_department_id, None)
+    role_id = await head_role_id(ctx, body.head_role_code)
     with db_errors("Department code"):
         row = await one(
             ctx,
-            "INSERT INTO erp.department(tenant_id, unit_id, parent_department_id, code, name) "
-            "VALUES (erp.current_tenant_id(), :unit_id, :parent_department_id, :code, :name) "
-            f"RETURNING {DEPT_COLS}",
-            body.model_dump(),
+            "INSERT INTO erp.department(tenant_id, unit_id, parent_department_id, code, name, "
+            "head_role_id) VALUES (erp.current_tenant_id(), :unit_id, :parent_department_id, "
+            f":code, :name, :head_role_id) RETURNING {DEPT_COLS}",
+            {**body.model_dump(), "head_role_id": role_id},
         )
     assert row is not None
     await audit(ctx, "department.create", "department", row["department_id"], body.model_dump())
@@ -320,6 +336,12 @@ async def update_department(
         await require_active_unit(ctx, merged["unit_id"])
     if "parent_department_id" in changes:
         await require_active_parent(ctx, merged["parent_department_id"], department_id)
+    role_id = (
+        await head_role_id(ctx, changes["head_role_code"])
+        if "head_role_code" in changes
+        else (await one(ctx, "SELECT head_role_id FROM erp.department WHERE department_id = :id",
+                        {"id": department_id}) or {}).get("head_role_id")
+    )
     if current["active"] and not merged["active"]:
         children = await count(
             ctx,
@@ -334,9 +356,9 @@ async def update_department(
         row = await one(
             ctx,
             "UPDATE erp.department SET name = :name, unit_id = :unit_id, "
-            "parent_department_id = :parent_department_id, active = :active "
-            f"WHERE department_id = :id RETURNING {DEPT_COLS}",
-            {**merged, "id": department_id},
+            "parent_department_id = :parent_department_id, active = :active, "
+            f"head_role_id = :head_role_id WHERE department_id = :id RETURNING {DEPT_COLS}",
+            {**merged, "id": department_id, "head_role_id": role_id},
         )
     assert row is not None
     await audit(ctx, "department.update", "department", department_id, {"changes": changes})
