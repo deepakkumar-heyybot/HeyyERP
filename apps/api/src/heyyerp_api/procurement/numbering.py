@@ -11,7 +11,7 @@ from heyyerp_api.masters.common import Ctx, one
 
 PREFIXES = {"indent": "IND", "rfq": "RFQ", "po": "PO", "grn": "GRN", "issue": "ISS",
             "transfer": "TRF", "count": "CNT", "return": "RET", "batch": "BAT", "work_order": "WO",
-            "prod_lot": "PL", "packing": "PK"}
+            "prod_lot": "PL", "packing": "PK", "inspection": "QI", "ncr": "NCR"}
 
 
 def fy_label(day: date) -> str:

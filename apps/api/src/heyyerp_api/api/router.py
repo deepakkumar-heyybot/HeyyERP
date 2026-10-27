@@ -24,6 +24,8 @@ from heyyerp_api.procurement.rfq import router as rfq_router
 from heyyerp_api.product.bom import router as bom_router
 from heyyerp_api.product.items import router as items_router
 from heyyerp_api.product.routes import router as routes_router
+from heyyerp_api.quality.inspections import router as inspections_router
+from heyyerp_api.quality.instruments import router as instruments_router
 from heyyerp_api.workflow.api import router as approvals_router
 from heyyerp_api.workflow.rules import router as approval_rules_router
 
@@ -54,3 +56,5 @@ api_router.include_router(batches_router)
 api_router.include_router(equipment_router)
 api_router.include_router(work_orders_router)
 api_router.include_router(shopfloor_router)
+api_router.include_router(inspections_router)
+api_router.include_router(instruments_router)

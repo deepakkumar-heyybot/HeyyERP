@@ -34,6 +34,7 @@ from heyyerp_api.masters.common import (
     scope_clause,
 )
 from heyyerp_api.procurement.numbering import next_number
+from heyyerp_api.quality.inspections import clearance, record_decision
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 move = requires("route.move")
@@ -284,6 +285,17 @@ async def decide_qa(batch_id: UUID, body: QaIn, ctx: Ctx = Depends(qa)) -> Batch
                 "the batch cannot be approved")
     elif not body.note:
         raise HTTPException(422, "A failed batch needs a note explaining why")
+    spec = await one(
+        ctx, "SELECT c.output_item_id FROM erp.compound_batch b JOIN erp.compound c ON "
+        "c.compound_id = b.compound_id WHERE b.batch_id = :id", {"id": batch_id})
+    assert spec is not None
+    if body.result == "PASSED":
+        await clearance(ctx, kind="IN_PROCESS", subject_type="COMPOUND_BATCH", subject_id=batch_id,
+                        item_id=spec["output_item_id"], since=None)
+    await record_decision(
+        ctx, kind="IN_PROCESS", subject_type="COMPOUND_BATCH", subject_id=batch_id,
+        unit_id=head["unit_id"], notes=body.note,
+        result="ACCEPT" if body.result == "PASSED" else "REJECT")
     await rows(
         ctx, "UPDATE erp.compound_batch SET qa_status = :r, hardness = :h, qa_note = :n, "
         "qa_by = :me, qa_at = now() WHERE batch_id = :id RETURNING batch_id",

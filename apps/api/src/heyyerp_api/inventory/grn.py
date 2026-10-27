@@ -36,6 +36,7 @@ from heyyerp_api.masters.common import (
 )
 from heyyerp_api.procurement import receiving
 from heyyerp_api.procurement.numbering import next_number
+from heyyerp_api.quality.inspections import clearance, record_decision
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 post_grn = requires("grn.post")
@@ -257,6 +258,9 @@ async def inspect_line(grn_line_id: UUID, body: InspectIn, ctx: Ctx = Depends(de
         raise HTTPException(status.HTTP_409_CONFLICT, f"The lot is {line['lot_status']}")
     if body.accepted_qty > line["received_qty"]:
         raise HTTPException(422, "Cannot accept more than was received")
+    if body.accepted_qty > 0:
+        await clearance(ctx, kind="INCOMING", subject_type="GRN_LINE", subject_id=grn_line_id,
+                        item_id=line["item_id"], since=None)
     rejected = line["received_qty"] - body.accepted_qty
     if rejected > 0:
         out = await ledger.move(
@@ -282,6 +286,10 @@ async def inspect_line(grn_line_id: UUID, body: InspectIn, ctx: Ctx = Depends(de
                {"a": body.accepted_qty, "r": rejected, "id": grn_line_id})
     await rows(ctx, "UPDATE erp.lot SET status = :s WHERE lot_id = :id RETURNING lot_id",
                {"s": "AVAILABLE" if body.accepted_qty > 0 else "BLOCKED", "id": line["lot_id"]})
+    await record_decision(
+        ctx, kind="INCOMING", subject_type="GRN_LINE", subject_id=grn_line_id,
+        unit_id=line["unit_id"], notes=body.note,
+        result="REJECT" if body.accepted_qty == 0 else "PARTIAL" if rejected > 0 else "ACCEPT")
     await audit(ctx, "grn.inspect", "grn", line["grn_id"],
                 {"grn_line_id": grn_line_id, "accepted": body.accepted_qty, "rejected": rejected,
                  "note": body.note})

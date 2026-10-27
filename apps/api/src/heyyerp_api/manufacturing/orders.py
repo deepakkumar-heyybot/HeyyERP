@@ -39,6 +39,7 @@ from heyyerp_api.masters.common import (
     scope_clause,
 )
 from heyyerp_api.procurement.numbering import next_number
+from heyyerp_api.quality.inspections import clearance, record_decision
 from heyyerp_api.security import has_permission
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
@@ -601,6 +602,17 @@ async def move_lot(
     if body.rejects > lot["quantity"]:
         raise HTTPException(422, f"Rejects exceed the {lot['quantity']} in the lot")
     remaining = lot["quantity"] - body.rejects
+    if here["is_qa_gate"]:
+        kind = "FINAL" if target["is_end"] or target["stage_code"] == "PACKING" else "IN_PROCESS"
+        arrived = await one(ctx, "SELECT max(moved_at) AS at FROM erp.prod_lot_move WHERE "
+                            "prod_lot_id = :id", {"id": prod_lot_id})
+        if remaining > 0:
+            await clearance(ctx, kind=kind, subject_type="PROD_LOT", subject_id=prod_lot_id,
+                            item_id=lot["item_id"], since=arrived["at"] if arrived else None)
+        await record_decision(
+            ctx, kind=kind, subject_type="PROD_LOT", subject_id=prod_lot_id,
+            unit_id=lot["unit_id"], notes=body.notes,
+            result="REJECT" if remaining == 0 else "PARTIAL" if body.rejects > 0 else "ACCEPT")
     new_status = ("SCRAPPED" if remaining == 0
                   else "READY" if target["is_end"] else "IN_PROCESS")
     await record_move(ctx, prod_lot_id, here["route_stage_id"], target["route_stage_id"],
