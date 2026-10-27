@@ -165,6 +165,7 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Live Phase 3 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 pass - first ADMIN through `cli make-admin`, 2FA enrolment, admin creates ERP profiles, role permissions and modules, plant scope, vendor approval and rejection through the engine, idempotent decisions, SLA overdue flag, reminders and escalation, deactivated user refused on the next request. Test data removed; test ERP profiles stay as DEACTIVATED because the append-only audit log references them.
 - 2026-10-27: Phase 3 built on `dev`: database-driven roles and permissions, admin users, plant scope, and the approval engine (126 API tests pass). Commits now use deepak.kumar@heyybot.com.
 - 2026-10-27: All earlier feature branches were combined into the single working branch `dev`; new work is committed and pushed there only.
 - 2026-10-27: Live Phase 2 check (real sessions, real PostgreSQL, non-owner API login): 29 of 29 checks pass - plants, departments, stores, reference data, customers and vendors; role boundaries (STORES, SALES, PURCHASE, ADMIN with and without 2FA); tenant isolation against a second tenant; audit rows carry the real user; CORS preflight for PATCH. It also found a real bug, fixed on `fix/auth-session-ratelimit`: the auth service's 10-per-minute rate limit applied to the API's session lookups, so after 10 requests the API reported every user as signed out. Test data was deleted; 8 audit rows remain because the audit log is append-only.
