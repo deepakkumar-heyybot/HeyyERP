@@ -8,6 +8,7 @@ from heyyerp_api.business_rules.api import router as business_rules_router
 from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
 from heyyerp_api.masters.reference import router as reference_router
+from heyyerp_api.product.bom import router as bom_router
 from heyyerp_api.product.items import router as items_router
 from heyyerp_api.product.routes import router as routes_router
 from heyyerp_api.workflow.api import router as approvals_router
@@ -26,3 +27,4 @@ api_router.include_router(approval_rules_router)
 api_router.include_router(business_rules_router)
 api_router.include_router(items_router)
 api_router.include_router(routes_router)
+api_router.include_router(bom_router)
