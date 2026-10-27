@@ -55,6 +55,21 @@ CREATE ROLE heyyerp_app LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS IN ROLE hey
 If the Better Auth `auth` schema is created *after* `0002` ran, also run:
 `GRANT USAGE ON SCHEMA auth TO heyyerp_app_rw; GRANT SELECT ON auth.member, auth.organization TO heyyerp_app_rw;`
 
+## Roles, users and the first administrator
+
+Roles, permissions, module access and the default approval matrix live in the database and are
+written by a command that is safe to repeat (it only adds what is missing). After the auth
+service has created its tables and `alembic upgrade head` has run:
+
+```powershell
+python -m heyyerp_api.cli seed --tenant v-rub-suspensions
+python -m heyyerp_api.cli make-admin --tenant v-rub-suspensions --email person@vrub.example
+```
+
+`make-admin` needs the person to have signed up and joined the V-Rub organization first. After
+that, administrators create other users through `POST /api/v1/admin/users` (email, role, plant
+scope). A person without an ERP profile can sign in but every ERP endpoint answers 403.
+
 ## Tests
 
 `pytest` runs the unit tests. The database tests (clean-database migration, tenant isolation

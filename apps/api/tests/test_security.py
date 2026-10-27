@@ -10,14 +10,22 @@ from fastapi.testclient import TestClient
 from heyyerp_api import security
 from heyyerp_api.api.me import router as me_router
 from heyyerp_api.config import get_settings
-from heyyerp_api.security import Principal, require_principal
+from heyyerp_api.security import Principal, Profile, require_principal
 
 TENANT = UUID("11111111-1111-1111-1111-111111111111")
 ORG = "org-1"
 
 
-def make_app(auth, membership):
-    """A tiny app with one protected route; auth/membership replace the auth service and DB."""
+def profile(role="STORES", permissions=("grn.post",), units=None):
+    return Profile(
+        app_user_id=UUID("22222222-2222-2222-2222-222222222222"), display_name="Test",
+        role=role, permissions=frozenset(permissions), modules=frozenset({"home"}),
+        unit_ids=units,
+    )
+
+
+def make_app(auth, membership=(ORG, ("MEMBER",)), prof="default"):
+    """A tiny app with one protected route; auth, membership and profile replace real lookups."""
     app = FastAPI()
     app.include_router(me_router)
 
@@ -27,6 +35,8 @@ def make_app(auth, membership):
 
     app.dependency_overrides[security.current_auth_session] = lambda: auth
     app.dependency_overrides[security.current_membership] = lambda: membership
+    app.dependency_overrides[security.current_profile] = lambda: (
+        profile() if prof == "default" else prof)
     return TestClient(app)
 
 
@@ -45,31 +55,35 @@ def tenant_map(monkeypatch, tmp_path):
 
 
 def test_not_signed_in_is_401():
-    assert make_app(None, None).get("/protected").status_code == 401
+    assert make_app(None, None, None).get("/protected").status_code == 401
 
 
 def test_unverified_email_is_403():
-    client = make_app(session(verified=False), (ORG, ("STORES",)))
-    assert client.get("/protected").status_code == 403
+    assert make_app(session(verified=False)).get("/protected").status_code == 403
 
 
 def test_non_member_is_403():
-    assert make_app(session(), None).get("/protected").status_code == 403
+    assert make_app(session(), membership=None).get("/protected").status_code == 403
+
+
+def test_member_without_an_erp_profile_is_403_with_a_clear_reason():
+    response = make_app(session(), prof=None).get("/protected")
+    assert response.status_code == 403 and "ERP profile" in response.json()["detail"]
 
 
 def test_mfa_roles_need_two_factor():
     for role in ("ADMIN", "MD", "ACCOUNTS"):
-        assert make_app(session(), (ORG, (role,))).get("/protected").status_code == 403
-        client = make_app(session(two_factor=True), (ORG, (role,)))
+        assert make_app(session(), prof=profile(role)).get("/protected").status_code == 403
+        client = make_app(session(two_factor=True), prof=profile(role))
         assert client.get("/protected").status_code == 200
 
 
 def test_shop_floor_role_does_not_need_two_factor():  # BRD 9.4
-    assert make_app(session(), (ORG, ("OPERATOR",))).get("/protected").status_code == 200
+    assert make_app(session(), prof=profile("OPERATOR")).get("/protected").status_code == 200
 
 
 def test_tenant_comes_from_server_mapping_not_client():
-    client = make_app(session(), (ORG, ("STORES",)))
+    client = make_app(session())
     other = "22222222-2222-2222-2222-222222222222"
     response = client.get("/protected", headers={"X-Tenant-Id": other}, params={"tenant_id": other})
     assert response.json() == {"tenant_id": str(TENANT)}
@@ -78,16 +92,37 @@ def test_tenant_comes_from_server_mapping_not_client():
 def test_unmapped_organization_is_403(monkeypatch):
     monkeypatch.setenv("ORG_TENANT_MAP", "{}")
     get_settings.cache_clear()
-    assert make_app(session(), (ORG, ("STORES",))).get("/protected").status_code == 403
+    assert make_app(session()).get("/protected").status_code == 403
 
 
 def test_me_reports_pending_mfa_instead_of_failing():
-    body = make_app(session(), (ORG, ("MD",))).get("/me").json()
+    body = make_app(session(), prof=profile("MD")).get("/me").json()
     assert body["mfa_required"] is True and body["access_granted"] is False
 
 
-def test_multiple_roles_any_mfa_role_requires_two_factor():
-    assert make_app(session(), (ORG, ("STORES", "ACCOUNTS"))).get("/protected").status_code == 403
+def test_me_exposes_role_permissions_modules_and_scope():
+    unit = UUID("33333333-3333-3333-3333-333333333333")
+    body = make_app(session(), prof=profile("STORES", ("grn.post", "inv.issue"), {unit})).get(
+        "/me").json()
+    assert body["role"] == "STORES" and body["permissions"] == ["grn.post", "inv.issue"]
+    assert body["modules"] == ["home"] and body["all_plants"] is False
+    assert body["unit_ids"] == [str(unit)]
+    assert make_app(session()).get("/me").json()["all_plants"] is True
+
+
+def test_permissions_come_from_the_profile_only():
+    principal = Principal("u", "e", True, ORG, True, TENANT, profile("STORES", ("grn.post",)))
+    assert security.has_permission(principal, "grn.post")
+    assert not security.has_permission(principal, "admin")
+
+
+def test_unit_scope_helper():
+    unit, other = UUID(int=1), UUID(int=2)
+    scoped = Principal("u", "e", True, ORG, True, TENANT, profile(units=frozenset({unit})))
+    everywhere = Principal("u", "e", True, ORG, True, TENANT, profile(units=None))
+    assert scoped.may_see_unit(unit) and not scoped.may_see_unit(other)
+    assert not scoped.may_see_unit(None)
+    assert everywhere.may_see_unit(other) and everywhere.may_see_unit(None)
 
 
 def _call(handler):
@@ -113,6 +148,12 @@ def test_fetch_session_signed_out_and_outage():
     assert err.value.status_code == 503
 
 
+def test_a_throttled_auth_service_is_503_not_signed_out():
+    with pytest.raises(HTTPException) as err:
+        _call(lambda r: httpx.Response(429))
+    assert err.value.status_code == 503
+
+
 def test_cors_allows_only_the_web_origin_with_credentials():
     from heyyerp_api.main import app
 
@@ -124,9 +165,3 @@ def test_cors_allows_only_the_web_origin_with_credentials():
     bad = client.options("/api/v1/me", headers={"Origin": "http://evil.example",
                                                "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in bad.headers
-
-
-def test_a_throttled_auth_service_is_503_not_signed_out():
-    with pytest.raises(HTTPException) as err:
-        _call(lambda r: httpx.Response(429))
-    assert err.value.status_code == 503

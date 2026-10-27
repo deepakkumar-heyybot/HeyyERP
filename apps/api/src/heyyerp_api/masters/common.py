@@ -76,15 +76,16 @@ def db_errors(entity: str) -> Iterator[None]:
 async def audit(
     ctx: Ctx, action: str, entity_type: str, entity_id: UUID | str, details: dict[str, Any]
 ) -> None:
-    """Append an audit row. The actor is the Better Auth user until app_user rows exist."""
+    """Append an audit row for the signed-in ERP user (and their Better Auth id in details)."""
     await ctx.session.execute(
         text(
             "INSERT INTO erp.audit_log(tenant_id, actor_role_code, action, entity_type, "
-            "entity_id, details) VALUES (erp.current_tenant_id(), :role, :action, "
-            ":entity_type, :entity_id, CAST(:details AS jsonb))"
+            "entity_id, details, actor_user_id) VALUES (erp.current_tenant_id(), :role, :action, "
+            ":entity_type, :entity_id, CAST(:details AS jsonb), :actor)"
         ),
         {
-            "role": ",".join(ctx.principal.roles),
+            "role": ctx.principal.role,
+            "actor": ctx.principal.profile.app_user_id,
             "action": action,
             "entity_type": entity_type,
             "entity_id": str(entity_id),

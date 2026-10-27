@@ -9,15 +9,15 @@ This is the shared project checklist for the heyyERP backend. Work proceeds in p
 
 ## Module status board
 
-Status as of 2026-10-27, from reading the repository (not from memory). `Done` = built and confirmed; `Partial` = some of it exists; `Not started` = only the database tables exist in `heyyERP_postgresql_schema.sql` (126 tables, tenant RLS policy generated for every `tenant_id` table). Update this table in the same change that ticks a phase item.
+Status as of 2026-10-27 (all work lives on the single branch `dev`; a tick means built, tested and pushed there). `Done` = built and confirmed; `Partial` = some of it exists; `Not started` = only the database tables exist in `heyyERP_postgresql_schema.sql` (126 tables, tenant RLS policy generated for every `tenant_id` table). Update this table in the same change that ticks a phase item.
 
 | Module | Phase | Schema tables it will use | Status | Done so far | Next step |
 |---|---|---|---|---|---|
 | Project foundation | 0 | all | Partial | Git + `origin`, `.gitignore`, `CONTRIBUTING.md`, FastAPI scaffold with `/health/live` and `/health/ready`, schema applied in pgAdmin | Review schema vs BRD; add migrations (no Alembic yet); agree branch rules |
 | Authentication (Better Auth) | 1 | `auth.*` (Better Auth) | Partial | Email/password, email verification, reset, TOTP, organization plugin, Resend mailer, web sign-in screens, one Playwright spec | Record e2e results; fix invitation-expiry mismatch; decide MFA policy |
-| API tenant security | 1 | `tenant`, `app_user` (`auth_subject`) | Partial | `get_tenant_session` sets `app.tenant_id` for RLS; `src/auth-contract.ts` defines the principal | Build the API session middleware (nothing sets `request.state.tenant_id` yet); map organization to tenant; isolation tests |
-| Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor` | Not started | — | Start after Phase 1 gate |
-| Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Not started | — | — |
+| API tenant security | 1 | `tenant`, `app_user` (`auth_subject`) | Done | Session middleware, tenant from server config, ERP profile and role/permissions from the database, MFA by ERP role, non-owner login, RLS and isolation tests | Production tenant mapping table when a second tenant arrives |
+| Organization and master data | 2 | `unit`, `department`, `store`, `uom`, `item_category`, `payment_term`, `tax_code`, `customer`, `vendor` | Partial | Plants, departments, stores, reference data, customers and vendors: APIs, validation, audit, tests | Organization settings (`business_setting`); real V-Rub data |
+| Roles, permissions, approvals | 3 | `role`, `permission`, `role_permission`, `role_module`, `user_unit_scope`, `approval_*`, `sla_policy` | Partial | 12 roles, 37 permissions, module access, admin users API, DB-driven permission checks | Plant-scope enforcement on reads; approval engine (rules, routing, SLA, escalation) |
 | Product engineering | 4 | `item`, `item_unit_policy`, `bom`, `bom_line`, `route`, `route_stage` | Not started | — | — |
 | Procurement | 5 | `indent*`, `rfq*`, `vendor_quote*`, `purchase_order`, `po_*`, `grn*`, `purchase_return*`, `cash_purchase`, `vendor_rating` | Not started | — | — |
 | Inventory and stores | 6 | `lot`, `stock_ledger`, `stock_balance`, `cost_layer*`, `stock_transfer*`, `stock_count*` | Not started | — | — |
@@ -37,7 +37,7 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [x] Apply the current PostgreSQL schema in pgAdmin (confirmed by the project owner).
 - [ ] Review the current schema against BRD requirements; confirm each table, tenant boundary, and relationship before treating it as production-ready.
 - [ ] Set up teammate repository access and agree branch protection / pull-request review rules.
-- [ ] Establish repeatable database migrations and a clean-database setup check: built on `feature/db-migrations` (Alembic: `0001` baseline, `0002` app-role grants; tests build a scratch database from nothing). The live `HeyyERP` database was verified identical to a fresh migration (1,006 columns, 1,646 constraints, 285 indexes, 127 tables/views), stamped `0001` and upgraded to `0002`. Tick after review and merge.
+- [x] Establish repeatable database migrations and a clean-database setup check: done on `dev` (Alembic: `0001` baseline, `0002` app-role grants; tests build a scratch database from nothing). The live `HeyyERP` database was verified identical to a fresh migration (1,006 columns, 1,646 constraints, 285 indexes, 127 tables/views), stamped `0001` and upgraded to `0002`.
 
 ## Phase 1 — Authentication and tenant security
 
@@ -45,33 +45,33 @@ Status as of 2026-10-27, from reading the repository (not from memory). `Done` =
 - [x] Configure email/password, email verification, password reset, TOTP two-factor authentication, and the Resend SMTP mailer in the auth service.
 - [ ] Run and record end-to-end tests for sign-up, duplicate email, verification expiry/resend, sign-in, MFA, password reset, and sign-out.
 - [x] Reconcile invitation expiry: decided 7 days (604800 s) for invitations, since 10 minutes is too short to accept one; verification and reset links stay at 10 minutes. `apps/auth/README.md` and `apps/auth/src/auth.ts` now agree (2026-10-27).
-- [ ] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
-- [ ] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
-- [ ] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`. Built on `feature/api-session-middleware` (`security.py`, `GET /api/v1/me`, 11 unit tests, ruff and mypy clean); tick after review, merge and the live check below.
+- [x] Connect verified Better Auth organization membership to the ERP `tenant_id` in trusted API session context.
+- [x] Enforce verified email, active organization membership, MFA status, role/permission, and tenant isolation on protected API requests; reject tenant IDs supplied directly by clients.
+- [x] Build the FastAPI session middleware that validates the Better Auth session and sets `request.state.tenant_id`. Built on `feature/api-session-middleware` (`security.py`, `GET /api/v1/me`, 11 unit tests, ruff and mypy clean); tick after review, merge and the live check below.
 - [x] Live-check the middleware (2026-10-27, local `HeyyERP` database): ran the auth migration, signed in a temporary user and called `GET /api/v1/me` against the real auth service and PostgreSQL. Verified: no cookie 401; forged cookie 401; unverified email blocked at sign-in; MD without 2FA gets `access_granted:false`; STORES gets `access_granted:true`; removing the membership gives 403. Test user deleted afterwards.
 - [x] Create the V-Rub `tenant` row and set `ORG_TENANT_MAP` in the API `.env` (done locally; repeat for staging and production). The `v-rub-suspensions` organization row was also created in `auth.organization`; there is still no seed script for it.
 - [x] Make the API connect as a non-owner PostgreSQL role: local role `heyyerp_app` (no superuser, no BYPASSRLS) created with table DML on `erp` and SELECT on `auth.member` / `auth.organization` only. Tested: without a tenant set 0 rows are visible, the own tenant shows 1, another tenant 0, and inserting a row for another tenant is rejected. Role grants are now scripted in migration `0002` (group role `heyyerp_app_rw`); creating the login itself is a documented per-environment step in `apps/api/README.md`.
 - [x] Decide the MFA policy: follow BRD section 9.4 — TOTP is mandatory only for ADMIN, MD and ACCOUNTS (decided by the project owner, 2026-10-27). `src/auth-contract.ts` now encodes this.
-- [ ] Align the web onboarding flow with the MFA policy: built on `feature/web-mfa-flow` — after sign-in the web app calls `GET /api/v1/me` and only sends roles that must use MFA and have not enrolled to `/totp-setup`; `/app` re-checks access; API now allows CORS from `WEB_BASE_URL`. Tick after review and merge.
+- [x] Align the web onboarding flow with the MFA policy: done on `dev` — after sign-in the web app calls `GET /api/v1/me` and only sends roles that must use MFA and have not enrolled to `/totp-setup`; `/app` re-checks access; API now allows CORS from `WEB_BASE_URL`.
 - [ ] Add shop-floor OTP / PIN sign-in (BRD FR-ADM-06 and FR-ADM-07) before shop-floor users are onboarded; until then they use verified email and password.
-- [ ] Verify tenant isolation with automated API/database tests before allowing business-data writes: database-level tests built on `feature/db-migrations` (RLS and a policy on every `tenant_id` table; a non-owner login sees only its own tenant, cannot update, delete or insert across tenants, cannot disable RLS). Still to add: an API-level test once the first tenant-scoped endpoint exists. Tick after review and merge.
+- [x] Verify tenant isolation with automated API/database tests before allowing business-data writes: database-level tests done on `dev` (RLS and a policy on every `tenant_id` table; a non-owner login sees only its own tenant, cannot update, delete or insert across tenants, cannot disable RLS). Still to add: an API-level test once the first tenant-scoped endpoint exists.
 
 ## Phase 2 — Organization and master data
 
 - [ ] Define the approved organization-to-tenant mapping and organization settings.
-- [ ] Implement plants/business units with GSTIN, state, active status, and tenant-scoped unique codes: built on `feature/master-org` (`/api/v1/org/units`; GSTIN format and check-digit validation; state derived from GSTIN; cannot deactivate a plant with active stores or departments). Tick after review and merge.
-- [ ] Implement departments, parent-department relationships, and plant association: built on `feature/master-org` (`/api/v1/org/departments`; no cycles, no inactive parent or plant). Tick after review and merge.
-- [ ] Implement stores/warehouses under plants, including store type and active status: built on `feature/master-org` (`/api/v1/org/stores`; code unique per plant; no stores on inactive plants). Phase 6 must add the check that blocks deactivating a store that holds stock. Tick after review and merge.
-- [ ] Implement shared reference data required by the BRD (for example UOM, item categories, payment terms, and tax codes) after scope review: built on `feature/master-reference` (`/api/v1/ref/payment-terms`, `tax-codes`, `item-categories`, read-only `uom` seeded by migration `0003` with 14 common units; V-Rub must confirm the real unit list). Tick after review and merge.
-- [ ] Implement customer and vendor master records with validated identifiers and status; keep procurement/sales transaction behavior in their own modules: built on `feature/master-parties` (`/api/v1/parties/customers` and `/vendors`; GSTIN check digit, PAN format, PAN must match the GSTIN; vendors always start PENDING_APPROVAL and the client cannot set status; migration `0004` allows one vendor per GSTIN per tenant). Vendor approval and reactivation arrive with the Phase 3 workflow. Tick after review and merge.
-- [ ] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities: built for plants, departments, stores, reference data, customers and vendors (interim role-to-permission map in `security.py`; audit rows in `erp.audit_log`; paging; constraint errors as 4xx). Tick after the three Phase 2 branches are reviewed and merged.
-- [ ] Add tests for uniqueness, invalid references, inactive records, authorization, and cross-tenant access: done in `tests/test_org_api.py`, `test_reference_api.py` and `test_parties_api.py` (54 API tests in total pass against a scratch database with two tenants and a non-owner login). Tick after merge.
+- [x] Implement plants/business units with GSTIN, state, active status, and tenant-scoped unique codes: done on `dev` (`/api/v1/org/units`; GSTIN format and check-digit validation; state derived from GSTIN; cannot deactivate a plant with active stores or departments).
+- [x] Implement departments, parent-department relationships, and plant association: done on `dev` (`/api/v1/org/departments`; no cycles, no inactive parent or plant).
+- [x] Implement stores/warehouses under plants, including store type and active status: done on `dev` (`/api/v1/org/stores`; code unique per plant; no stores on inactive plants). Phase 6 must add the check that blocks deactivating a store that holds stock.
+- [x] Implement shared reference data required by the BRD (for example UOM, item categories, payment terms, and tax codes) after scope review: done on `dev` (`/api/v1/ref/payment-terms`, `tax-codes`, `item-categories`, read-only `uom` seeded by migration `0003` with 14 common units; V-Rub must confirm the real unit list).
+- [x] Implement customer and vendor master records with validated identifiers and status; keep procurement/sales transaction behavior in their own modules: done on `dev` (`/api/v1/parties/customers` and `/vendors`; GSTIN check digit, PAN format, PAN must match the GSTIN; vendors always start PENDING_APPROVAL and the client cannot set status; migration `0004` allows one vendor per GSTIN per tenant). Vendor approval and reactivation arrive with the Phase 3 workflow.
+- [x] Add tenant-safe CRUD/list APIs, validation, permission checks, and audit events for approved master-data entities: built for plants, departments, stores, reference data, customers and vendors (interim role-to-permission map in `security.py`; audit rows in `erp.audit_log`; paging; constraint errors as 4xx).
+- [x] Add tests for uniqueness, invalid references, inactive records, authorization, and cross-tenant access: done in `tests/test_org_api.py`, `test_reference_api.py` and `test_parties_api.py` (54 API tests in total pass against a scratch database with two tenants and a non-owner login).
 - [ ] Confirm real plant names, GSTINs, department list, and store list with V-Rub before loading production master data. Note: the BRD's demo GSTINs (for example `06AAKCV4123R1ZQ`) fail the real check-digit test, so they cannot be loaded; real values are needed. Also still open: the 14 seeded units of measure and the vendor bank-account fields (BRD FR-PRC-04 asks for bank checks, but `erp.vendor` has no bank columns).
 
 ## Phase 3 — Roles, permissions, and approval workflow
 
-- [ ] Define ERP roles, module access, action permissions, and plant/unit scope from the BRD.
-- [ ] Enforce permissions in the API (not only in the frontend).
+- [ ] Define ERP roles, module access, action permissions, and plant/unit scope from the BRD: roles, 37 permissions and module access are defined (`rbac/catalog.py`, seeded by `python -m heyyerp_api.cli seed`), admin APIs manage users and their plant scope (`/api/v1/admin/users`); enforcing the plant scope on data reads is the next step.
+- [x] Enforce permissions in the API (not only in the frontend): done on `dev` — roles, permissions and modules are rows in the database (`erp.role`, `role_permission`, `role_module`), loaded per request from the caller's ERP profile (`erp.app_user`); no permission is taken from the browser or Better Auth. Every existing endpoint uses it, and `/me` shows the caller their permissions and modules. MFA is keyed to the ERP role.
 - [ ] Implement configurable approval rules, approval instances/actions, SLA tracking, and audit history.
 - [ ] Test approver routing, role-based decisions, rejection, escalation, and rule changes while documents are in flight.
 
@@ -155,7 +155,7 @@ Use this checklist for every module before marking its phase item complete:
 
 ## Current next work
 
-Finish Phase 1 before any business module. In order:
+Phase 1 and Phase 2 code is complete on `dev`; Phase 3 is in progress (roles and permissions done; plant-scope enforcement and the approval engine next). Open items before business modules:
 
 1. Review and merge the four open branches, in this order: `docs/module-status-board`, `feature/api-session-middleware`, `feature/web-mfa-flow`, `feature/db-migrations`. Then tick the items they cover.
 2. Run and record the auth end-to-end tests (needs a mail inbox or the auth service's test mail mode).
