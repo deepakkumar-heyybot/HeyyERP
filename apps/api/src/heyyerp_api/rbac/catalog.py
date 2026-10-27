@@ -191,6 +191,14 @@ DEFAULT_RULES: list[dict[str, Any]] = [
      "steps": ["PLANT_HEAD"]},
 ]
 
+# Compounds from BRD section 6.3 (recipes come from V-Rub sheet 3 and are entered by the plant).
+# Fields: code, name, lane, minimum maturation hours, maximum age hours, hardness range.
+DEFAULT_COMPOUNDS = [
+    ("VR-C60", "NR compound, 60 Shore A", "RUBBER", 24, 120, 55, 65),
+    ("VR-C70", "NR/SBR compound, 70 Shore A", "RUBBER", 24, 120, 65, 75),
+    ("VR-E65", "EPDM extrusion compound, 65 Shore A", "EXTRUSION", 12, 96, 60, 70),
+]
+
 # Production routes from the V-Rub process-flow PDF (BRD section 6.2). Stage: (code, name, QA gate).
 # The last stage of each route is its end stage. Rubber lanes add batch weighing, mixing and
 # maturation upstream; those belong to compound batches (Phase 7), not to a route.

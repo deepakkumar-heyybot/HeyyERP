@@ -11,6 +11,7 @@ from uuid import UUID
 import psycopg
 
 from heyyerp_api.rbac.catalog import (
+    DEFAULT_COMPOUNDS,
     DEFAULT_ROUTES,
     DEFAULT_RULES,
     PERMISSIONS,
@@ -110,10 +111,22 @@ def seed_default_routes(conn: psycopg.Connection[Any], tenant_id: UUID | str) ->
             )
 
 
+def seed_default_compounds(conn: psycopg.Connection[Any], tenant_id: UUID | str) -> None:
+    for code, name, lane, minimum, maximum, low, high in DEFAULT_COMPOUNDS:
+        conn.execute(
+            "INSERT INTO erp.compound(tenant_id, code, name, lane, maturation_min_hours, "
+            "maximum_age_hours, hardness_min, hardness_max) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (tenant_id, code) DO NOTHING",
+            (tenant_id, code, name, lane, minimum, maximum, low, high),
+        )
+
+
 def seed_tenant(conn: psycopg.Connection[Any], tenant_id: UUID | str) -> None:
     role_ids = seed_roles(conn, tenant_id)
     seed_default_rules(conn, tenant_id, role_ids)
     seed_default_routes(conn, tenant_id)
+    seed_default_compounds(conn, tenant_id)
 
 
 def create_app_user(

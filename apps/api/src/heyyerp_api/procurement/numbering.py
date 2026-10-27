@@ -10,7 +10,8 @@ from datetime import date
 from heyyerp_api.masters.common import Ctx, one
 
 PREFIXES = {"indent": "IND", "rfq": "RFQ", "po": "PO", "grn": "GRN", "issue": "ISS",
-            "transfer": "TRF", "count": "CNT", "return": "RET"}
+            "transfer": "TRF", "count": "CNT", "return": "RET", "batch": "BAT", "work_order": "WO",
+            "prod_lot": "PL", "packing": "PK"}
 
 
 def fy_label(day: date) -> str:

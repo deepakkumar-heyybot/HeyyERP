@@ -40,7 +40,7 @@ def scratch_db():
 
 def test_clean_database_reaches_head_with_the_full_schema(scratch_db):
     with psycopg.connect(scratch_db) as db:
-        assert db.execute("select version_num from alembic_version").fetchone() == ("0008",)
+        assert db.execute("select version_num from alembic_version").fetchone() == ("0009",)
         tables = db.execute(
             "select count(*) from information_schema.tables "
             "where table_schema = 'erp' and table_type = 'BASE TABLE'"
