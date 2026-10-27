@@ -27,10 +27,12 @@ AUTH_TABLES = """
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE auth."user" (id text PRIMARY KEY, name text NOT NULL, email text NOT NULL UNIQUE,
   "emailVerified" boolean NOT NULL DEFAULT false);
-CREATE TABLE auth.organization (id text PRIMARY KEY, name text NOT NULL, slug text NOT NULL UNIQUE);
+CREATE TABLE auth.organization (id text PRIMARY KEY, name text NOT NULL, slug text NOT NULL UNIQUE,
+  "createdAt" timestamptz NOT NULL DEFAULT now());
 CREATE TABLE auth.member (id text PRIMARY KEY,
   "organizationId" text NOT NULL REFERENCES auth.organization (id),
-  "userId" text NOT NULL REFERENCES auth."user" (id), role text NOT NULL);
+  "userId" text NOT NULL REFERENCES auth."user" (id), role text NOT NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now());
 INSERT INTO auth.organization (id, name, slug) VALUES ('org-1', 'V-Rub', 'v-rub-suspensions');
 """
 

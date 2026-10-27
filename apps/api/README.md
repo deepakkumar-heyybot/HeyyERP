@@ -66,7 +66,9 @@ python -m heyyerp_api.cli seed --tenant v-rub-suspensions
 python -m heyyerp_api.cli make-admin --tenant v-rub-suspensions --email person@vrub.example
 ```
 
-`make-admin` needs the person to have signed up and joined the V-Rub organization first. After
+`make-admin` needs the person to have signed up first. Nobody can invite the very first administrator, so
+for that one person add `--join-org` (adds them to the V-Rub organization) and, if the mail service is not
+configured yet, `--verify-email`. After
 that, administrators create other users through `POST /api/v1/admin/users` (email, role, plant
 scope). A person without an ERP profile can sign in but every ERP endpoint answers 403.
 
