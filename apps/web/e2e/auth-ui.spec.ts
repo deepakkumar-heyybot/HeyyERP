@@ -76,3 +76,15 @@ test("a user outside the V-Rub organization sees the API's reason", async ({ pag
   await mockSignInAndMe(page, { status: 403, body: { detail: "Not a member of the V-Rub organization" } });
   await expect(page.getByRole("alert")).toContainText("Not a member of the V-Rub organization");
 });
+
+test("Sign out ends the auth session before returning to sign-in", async ({ page }) => {
+  let signedOut = false;
+  await page.route("**/api/auth/sign-out", route => {
+    signedOut = route.request().method() !== "OPTIONS" || signedOut;
+    return route.fulfill({ status: route.request().method() === "OPTIONS" ? 204 : 200, headers: cors, contentType: "application/json", body: route.request().method() === "OPTIONS" ? "" : JSON.stringify({ success: true }) });
+  });
+  await mockSignInAndMe(page, { status: 200, body: { ...profile, roles: ["STORES"], mfa_required: false, access_granted: true } });
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  expect(signedOut).toBe(true);
+});

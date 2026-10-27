@@ -118,7 +118,7 @@ function AppHome() {
     fetchMe().then((me) => (me.access_granted ? setReady(true) : navigate(homeFor(me))), () => navigate("/"));
   }, [navigate]);
   if (!ready) return <section className="auth-card"><p className="subtitle">Checking your access…</p></section>;
-  return <section className="auth-card"><div className="card-icon"><ShieldCheck size={21} /></div><h1>Identity verified</h1><p className="subtitle">Your authentication is complete. ERP workspace integration is the next milestone.</p><Link className="primary" to="/">Sign out <ArrowRight size={17} /></Link></section>;
+  return <section className="auth-card"><div className="card-icon"><ShieldCheck size={21} /></div><h1>Identity verified</h1><p className="subtitle">Your authentication is complete. ERP workspace integration is the next milestone.</p><button className="primary" type="button" onClick={async () => { await authClient.signOut(); navigate("/"); }}>Sign out <ArrowRight size={17} /></button></section>;
 }
 
 function App() {

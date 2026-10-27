@@ -165,5 +165,6 @@ Then begin Phase 2 (organization and master data). Tick items module by module o
 
 ## Progress log
 
+- 2026-10-27: Full-stack check of the combined branches (auth + API + web, real browser, no mocks): STORES signs in without TOTP; a non-member is refused; MD is sent to authenticator setup, enrols with a real TOTP code, and is then asked for a code at the next sign-in (wrong code rejected). Found and fixed on `fix/web-sign-out`: the "Sign out" link did not end the session.
 - 2026-10-27: MFA policy decided (BRD 9.4). API session middleware and `/me` built on `feature/api-session-middleware`, awaiting review; not yet ticked.
 - 2026-10-27: Added the module status board and two Phase 1 items (API session middleware, MFA policy) after reviewing the repository. No items newly ticked.
