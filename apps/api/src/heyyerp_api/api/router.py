@@ -28,12 +28,15 @@ from heyyerp_api.quality.holds import router as holds_router
 from heyyerp_api.quality.inspections import router as inspections_router
 from heyyerp_api.quality.instruments import router as instruments_router
 from heyyerp_api.quality.ncr import router as ncr_router
+from heyyerp_api.sales.challans import router as challans_router
 from heyyerp_api.sales.dispatch import router as dispatch_router
 from heyyerp_api.sales.imports import router as sched_imports_router
+from heyyerp_api.sales.interunit import router as interunit_router
 from heyyerp_api.sales.invoices import router as invoices_router
 from heyyerp_api.sales.orders import router as sales_orders_router
 from heyyerp_api.sales.pricing import router as pricing_router
 from heyyerp_api.sales.quotes import router as quotes_router
+from heyyerp_api.sales.scrap import router as scrap_router
 from heyyerp_api.workflow.api import router as approvals_router
 from heyyerp_api.workflow.rules import router as approval_rules_router
 
@@ -74,3 +77,6 @@ api_router.include_router(quotes_router)
 api_router.include_router(sched_imports_router)
 api_router.include_router(dispatch_router)
 api_router.include_router(invoices_router)
+api_router.include_router(challans_router)
+api_router.include_router(scrap_router)
+api_router.include_router(interunit_router)
