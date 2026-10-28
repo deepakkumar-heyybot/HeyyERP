@@ -92,9 +92,10 @@ What to know about them:
   refuses to start tenant work without it.
 - The shared database is a **development** database on Railway. It is not the production one.
   Only the backend owner runs migrations on it.
-- **Heads-up:** the shared database was migrated to `0013` on 28 Oct. Backend code is at `0016`.
-  The sales endpoints (section 7.10) fail until the owner migrates it to `0016`. Ask before you
-  start on sales screens.
+- The shared database is at migration `0016`, the same as the backend code (updated on 28 Oct 2026),
+  so every module in section 8, including sales, works against it. When the backend owner adds a
+  migration later, he updates the shared database and tells the team; until then new endpoints that
+  need new tables will fail.
 
 ## 5. Signing in and knowing who the user is
 
@@ -294,7 +295,7 @@ QA queue, inspection plans, inspections, holds, NCR with 8D, instruments and cal
 
 ### 8.9 Sales and dispatch (`sales`)
 Price lists, quotations, sales orders, schedule import, dispatch, invoices, challans, scrap sales,
-inter-unit invoices. Requires the database at migration `0016` (see section 4).
+inter-unit invoices. The shared database already has the sales tables (migration `0016`).
 - **Price list** (`/sales/prices`): one open price per customer and item; a newer price closes the old.
 - **Quotation**: DRAFT, SENT, ACCEPTED or REJECTED, then `convert` to a sales order (once). Expiry is
   derived from `valid_until`.
