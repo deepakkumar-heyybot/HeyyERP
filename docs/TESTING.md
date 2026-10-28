@@ -15,6 +15,7 @@ not "done" (and its roadmap items are not ticked) until its tests pass together 
 | Permissions, roles, settings, numbering | `tests/snapshots/catalog.json` | any of them changes without a reviewed snapshot update |
 | Typos in permissions | same file | code names a permission or module that does not exist |
 | Database structure | same file | a tenant table lacks row-level security, the ledger stops being append-only, stock can go negative, or migrations fork |
+| Stock protection | `tests/test_stock_protection.py` | a lot that is held, quarantined, blocked, waiting for QA or expired can leave by any road (issue, transfer, challan, dispatch), or the last stock is promised twice. Add every new road out of a store to `ROADS` there |
 | Cross-module flow | `tests/test_golden_path.py` | modules stop handing over to each other (purchase to finished goods) |
 | CI | `.github/workflows/*.yml` | lint, types, any test or the web build fails on push or pull request |
 
@@ -23,7 +24,8 @@ not "done" (and its roadmap items are not ticked) until its tests pass together 
 ```powershell
 cd apps/api
 $env:TEST_ADMIN_DATABASE_URL = "postgresql://postgres:<password>@localhost:5432/postgres"
-pytest -q                                   # about 25 minutes for everything
+python scripts/test_all.py                  # everything, in small chunks, with one summary (about 40 minutes)
+pytest -q                                   # everything in one go; may need a lot of memory
 pytest -q tests/test_regression_guards.py   # seconds: run this after any change
 pytest -q --cov=heyyerp_api --cov-report=term-missing:skip-covered   # coverage
 ```
