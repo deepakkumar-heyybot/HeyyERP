@@ -137,6 +137,14 @@ class TestDatabaseStructure:
             "and not t.tgisinternal order by 1")
         assert [t[0] for t in tables] == ["audit_log", "stock_ledger"]
 
+    def test_posted_journals_are_protected_by_the_database(self, api_database):
+        triggers = self.query(
+            api_database,
+            "select c.relname, t.tgname from pg_trigger t join pg_class c on c.oid = t.tgrelid "
+            "where t.tgname in ('journal_guard', 'journal_line_guard') and not t.tgisinternal "
+            "order by 1")
+        assert triggers == [("journal", "journal_guard"), ("journal_line", "journal_line_guard")]
+
     def test_stock_cannot_go_negative_in_the_database_itself(self, api_database):
         checks = self.query(
             api_database,

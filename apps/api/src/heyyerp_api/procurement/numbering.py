@@ -13,7 +13,8 @@ PREFIXES = {"indent": "IND", "rfq": "RFQ", "po": "PO", "grn": "GRN", "issue": "I
             "transfer": "TRF", "count": "CNT", "return": "RET", "batch": "BAT", "work_order": "WO",
             "prod_lot": "PL", "packing": "PK", "inspection": "QI", "ncr": "NCR",
             "sales_order": "SO", "quote": "QT", "schedule_import": "SI", "dispatch": "DSP",
-            "invoice": "INV", "challan": "CHL", "scrap_sale": "SCR", "inter_unit": "IUI"}
+            "invoice": "INV", "challan": "CHL", "scrap_sale": "SCR", "inter_unit": "IUI",
+            "journal": "JV"}
 
 
 def fy_label(day: date) -> str:

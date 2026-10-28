@@ -11,8 +11,7 @@ that is still in process. Unused raw material goes back to stores into the lot i
 Shift entries need mfg.entry, rework and returns route.move.
 """
 
-from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -21,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.period import last_open_day
 from heyyerp_api.inventory import ledger
 from heyyerp_api.manufacturing.orders import (
     LotOut,
@@ -126,13 +126,6 @@ async def load_shift(ctx: Ctx, entry_id: UUID) -> ShiftOut | None:
     losses = await rows(ctx, "SELECT kind, reason, quantity, minutes FROM erp.shift_loss WHERE "
                         "shift_entry_id = :id ORDER BY kind, reason", {"id": entry_id})
     return ShiftOut(**head, losses=[LossOut(**x) for x in losses])
-
-
-def last_open_day(work_date: date, lock_day: int, extra_days: int) -> date:
-    """The last day on which production of work_date's month may still be posted."""
-    last = monthrange(work_date.year, work_date.month)[1]
-    lock = date(work_date.year, work_date.month, last if lock_day == 0 else min(lock_day, last))
-    return lock + timedelta(days=extra_days)
 
 
 @router.post("/shift-entries", response_model=ShiftOut, status_code=status.HTTP_201_CREATED)

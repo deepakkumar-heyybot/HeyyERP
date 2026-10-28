@@ -16,6 +16,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from heyyerp_api.finance.period import ensure_stock_open
 from heyyerp_api.masters.common import Ctx, one, rows
 
 MOVEMENTS = (
@@ -46,6 +47,7 @@ async def move(
         {"k": idempotency_key})
     if existing is not None:
         return existing["ledger_id"]  # type: ignore[no-any-return]
+    await ensure_stock_open(ctx, unit_id)
     await rows(
         ctx,
         "INSERT INTO erp.stock_balance(tenant_id, unit_id, item_id, lot_id, store_id) VALUES "
