@@ -541,6 +541,7 @@
   "journal": "JV",
   "ncr": "NCR",
   "packing": "PK",
+  "payment": "PAY",
   "po": "PO",
   "prod_lot": "PL",
   "quote": "QT",
@@ -565,6 +566,7 @@
   "vendor"
  ],
  "registered_document_types": [
+  "bill",
   "bom",
   "count",
   "indent",

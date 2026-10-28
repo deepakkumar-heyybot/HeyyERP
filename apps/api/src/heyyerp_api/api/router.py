@@ -6,7 +6,9 @@ from heyyerp_api.api.health import router as health_router
 from heyyerp_api.api.me import router as me_router
 from heyyerp_api.business_rules.api import router as business_rules_router
 from heyyerp_api.finance.accounts import router as accounts_router
+from heyyerp_api.finance.bills import router as bills_router
 from heyyerp_api.finance.journals import router as journals_router
+from heyyerp_api.finance.payments import router as payments_router
 from heyyerp_api.finance.period import router as periods_router
 from heyyerp_api.inventory.counts import router as counts_router
 from heyyerp_api.inventory.grn import router as grn_router
@@ -86,3 +88,5 @@ api_router.include_router(interunit_router)
 api_router.include_router(accounts_router)
 api_router.include_router(journals_router)
 api_router.include_router(periods_router)
+api_router.include_router(bills_router)
+api_router.include_router(payments_router)

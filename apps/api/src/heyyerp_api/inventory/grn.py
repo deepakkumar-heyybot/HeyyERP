@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.autopost import post_grn_receipt
 from heyyerp_api.inventory import ledger
 from heyyerp_api.masters.common import (
     Ctx,
@@ -286,6 +287,7 @@ async def inspect_line(grn_line_id: UUID, body: InspectIn, ctx: Ctx = Depends(de
                {"a": body.accepted_qty, "r": rejected, "id": grn_line_id})
     await rows(ctx, "UPDATE erp.lot SET status = :s WHERE lot_id = :id RETURNING lot_id",
                {"s": "AVAILABLE" if body.accepted_qty > 0 else "BLOCKED", "id": line["lot_id"]})
+    await post_grn_receipt(ctx, grn_line_id)
     await record_decision(
         ctx, kind="INCOMING", subject_type="GRN_LINE", subject_id=grn_line_id,
         unit_id=line["unit_id"], notes=body.note,
