@@ -16,7 +16,7 @@ from heyyerp_api.business_rules import service as rules
 from heyyerp_api.finance.accounts import role_account
 from heyyerp_api.finance.journals import LineIn, post_entry
 from heyyerp_api.inventory.ledger import money
-from heyyerp_api.masters.common import Ctx, one
+from heyyerp_api.masters.common import Ctx, one, rows
 
 
 async def finance_enabled(ctx: Ctx, unit_id: UUID) -> bool:
@@ -42,6 +42,35 @@ async def book(
     return await post_entry(ctx, unit_id=unit_id, journal_date=day or date.today(),
                             source_type=source_type, source_id=source_id, narration=narration,
                             lines=lines)
+
+
+INVENTORY_ROLE = {"RM": "INVENTORY_RM", "WIP": "INVENTORY_WIP", "FG": "INVENTORY_FG"}
+
+
+async def book_stock(
+    ctx: Ctx, *, unit_id: UUID, source_type: str, source_id: UUID, narration: str,
+    values: dict[UUID, Decimal], expense_role: str, outflow: bool,
+) -> UUID | None:
+    """Book stock leaving (debit the expense, credit the inventory of each item type) or arriving
+    (the reverse) at the given values. Raw material, work in progress and finished goods have their
+    own inventory accounts; spares, consumables and the rest sit with the raw material store."""
+    if not values or not any(values.values()) or not await finance_enabled(ctx, unit_id):
+        return None
+    kinds = {r["item_id"]: r["item_type"] for r in await rows(
+        ctx, "SELECT item_id, item_type FROM erp.item WHERE item_id = ANY(CAST(:ids AS uuid[]))",
+        {"ids": list(values)})}
+    by_role: dict[str, Decimal] = {}
+    for item_id, value in values.items():
+        role = INVENTORY_ROLE.get(kinds.get(item_id, "RM"), "INVENTORY_RM")
+        by_role[role] = by_role.get(role, Decimal(0)) + value
+    total = sum(by_role.values(), Decimal(0))
+    zero = Decimal(0)
+    if outflow:
+        amounts = [(expense_role, total, zero)] + [(r, zero, v) for r, v in by_role.items()]
+    else:
+        amounts = [(r, v, zero) for r, v in by_role.items()] + [(expense_role, zero, total)]
+    return await book(ctx, unit_id=unit_id, source_type=source_type, source_id=source_id,
+                      narration=narration, amounts=amounts)
 
 
 async def post_sales_invoice(ctx: Ctx, invoice_id: UUID) -> UUID | None:

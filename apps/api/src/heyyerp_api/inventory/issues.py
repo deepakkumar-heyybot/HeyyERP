@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book_stock
 from heyyerp_api.inventory import ledger
 from heyyerp_api.masters.common import (
     Ctx,
@@ -242,6 +243,7 @@ async def issue(ctx: Ctx, body: IssueIn) -> UUID:
     assert created is not None
     issue_id: UUID = created["issue_id"]
     steps = 0
+    values: dict[UUID, Decimal] = {}
 
     async def take(lot_id: UUID, item_id: UUID, quantity: Decimal, from_reservation: bool) -> None:
         nonlocal steps
@@ -252,8 +254,9 @@ async def issue(ctx: Ctx, body: IssueIn) -> UUID:
             reference_type="ISSUE", reference_id=issue_id,
             idempotency_key=f"issue:{issue_id}:{steps}",
             consumes_reservation=quantity if from_reservation else Decimal(0))
-        await ledger.take_layers(ctx, unit_id=store["unit_id"], item_id=item_id,
-                                 quantity=quantity, issue_ledger_id=ledger_id)
+        values[item_id] = values.get(item_id, Decimal(0)) + await ledger.take_layers(
+            ctx, unit_id=store["unit_id"], item_id=item_id, quantity=quantity,
+            issue_ledger_id=ledger_id)
 
     for line in wanted:
         need = line.quantity
@@ -292,6 +295,9 @@ async def issue(ctx: Ctx, body: IssueIn) -> UUID:
                     + (f" ({expired} more is expired and blocked)" if expired else ""))
             for pick in picks:
                 await take(pick["lot_id"], line.item_id, pick["take"], False)
+    await book_stock(ctx, unit_id=store["unit_id"], source_type="STOCK_ISSUE", source_id=issue_id,
+                     narration=f"Stock issue {number}: {body.purpose.strip()}", values=values,
+                     expense_role="MATERIAL_CONSUMED", outflow=True)
     await audit(ctx, "stock.issue", "issue", issue_id,
                 {"issue_no": number, "store_id": body.store_id, "purpose": body.purpose,
                  "lines": len(body.lines), "rule": rule})

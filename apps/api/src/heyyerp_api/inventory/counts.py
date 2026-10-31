@@ -16,6 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.autopost import book_stock
 from heyyerp_api.inventory import ledger
 from heyyerp_api.inventory.issues import store_in_scope
 from heyyerp_api.masters.common import (
@@ -257,6 +258,8 @@ async def post_adjustments(ctx: Ctx, count_id: UUID) -> None:
     lines = await rows(
         ctx, "SELECT count_line_id, item_id, lot_id, variance FROM erp.stock_count_line "
         "WHERE count_id = :id AND variance <> 0 ORDER BY lot_id", {"id": count_id})
+    lost: dict[UUID, Decimal] = {}
+    found: dict[UUID, Decimal] = {}
     for line in lines:
         delta: Decimal = line["variance"]
         ledger_id = await ledger.move(
@@ -265,13 +268,20 @@ async def post_adjustments(ctx: Ctx, count_id: UUID) -> None:
             reference_type="COUNT", reference_id=count_id,
             idempotency_key=f"count:{count_id}:{line['count_line_id']}")
         if delta < 0:
-            await ledger.take_layers(ctx, unit_id=head["unit_id"], item_id=line["item_id"],
-                                     quantity=-delta, issue_ledger_id=ledger_id)
+            lost[line["item_id"]] = lost.get(line["item_id"], Decimal(0)) + (
+                await ledger.take_layers(ctx, unit_id=head["unit_id"], item_id=line["item_id"],
+                                         quantity=-delta, issue_ledger_id=ledger_id))
         else:
             cost = await ledger.last_cost(ctx, head["unit_id"], line["item_id"])
             await ledger.add_layer(ctx, ledger_id=ledger_id, item_id=line["item_id"],
                                    lot_id=line["lot_id"], quantity=delta,
                                    unit_cost=cost or Decimal(0))
+            found[line["item_id"]] = found.get(line["item_id"], Decimal(0)) + ledger.money(
+                delta * (cost or Decimal(0)))
+    for kind, values, out in (("COUNT_LOSS", lost, True), ("COUNT_GAIN", found, False)):
+        await book_stock(ctx, unit_id=head["unit_id"], source_type=kind, source_id=count_id,
+                         narration=f"Stock count {head['count_no']}", values=values,
+                         expense_role="INVENTORY_ADJUSTMENT", outflow=out)
     await rows(ctx, "UPDATE erp.stock_count SET status = 'POSTED' WHERE count_id = :id "
                "RETURNING count_id", {"id": count_id})
     await audit(ctx, "count.post", "count", count_id,

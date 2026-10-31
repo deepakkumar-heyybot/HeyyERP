@@ -6,7 +6,7 @@ invoiced once, which gives it an invoice number; a rejected one is final. Needs 
 draft, submit and invoice; reading needs the sales module.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -14,6 +14,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.accounts import role_account
+from heyyerp_api.finance.autopost import finance_enabled
+from heyyerp_api.finance.journals import LineIn, post_entry
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
@@ -79,7 +82,8 @@ async def load(ctx: Ctx, scrap_id: UUID) -> ScrapOut | None:
 async def require_scrap(ctx: Ctx, scrap_id: UUID, *allowed: str) -> dict[str, Any]:
     clause, params = scope_clause(ctx, "unit_id")
     head = await one(
-        ctx, "SELECT scrap_sale_id, sale_no, status, amount FROM erp.scrap_sale WHERE "
+        ctx, "SELECT scrap_sale_id, sale_no, status, amount, unit_id, customer_id FROM "
+        "erp.scrap_sale WHERE "
         f"scrap_sale_id = :id{' AND ' + clause if clause else ''} FOR UPDATE",
         {**params, "id": scrap_id})
     if head is None:
@@ -150,6 +154,16 @@ async def invoice_scrap_sale(scrap_id: UUID, ctx: Ctx = Depends(manage)) -> Scra
     await rows(ctx, "UPDATE erp.scrap_sale SET status = 'INVOICED', invoice_no = :n, invoiced_at "
                "= now() WHERE scrap_sale_id = :id RETURNING scrap_sale_id",
                {"n": number, "id": scrap_id})
+    if await finance_enabled(ctx, head["unit_id"]):  # a customer owes it, a cash sale is banked
+        owed = head["customer_id"] is not None
+        await post_entry(
+            ctx, unit_id=head["unit_id"], journal_date=date.today(), source_type="SCRAP_SALE",
+            source_id=scrap_id, narration=f"Scrap sale {head['sale_no']} invoice {number}",
+            lines=[LineIn(account_id=await role_account(
+                ctx, head["unit_id"], "RECEIVABLE" if owed else "BANK"), debit=head["amount"],
+                party_type="CUSTOMER" if owed else None, party_id=head["customer_id"]),
+                LineIn(account_id=await role_account(ctx, head["unit_id"], "SCRAP_SALES"),
+                       credit=head["amount"])])
     await audit(ctx, "scrap.invoice", "scrap_sale", scrap_id,
                 {"sale_no": head["sale_no"], "invoice_no": number, "amount": head["amount"]})
     result = await load(ctx, scrap_id)

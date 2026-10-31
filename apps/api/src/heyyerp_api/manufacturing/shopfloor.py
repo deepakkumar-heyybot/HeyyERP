@@ -75,9 +75,13 @@ class ShiftIn(Strict):
     good_qty: Decimal = Field(ge=0, le=Decimal(1_000_000_000), max_digits=18, decimal_places=3)
     rejects: list[RejectIn] = Field(default_factory=list, max_length=30)
     downtime: list[DowntimeIn] = Field(default_factory=list, max_length=30)
+    mould_id: UUID | None = None  # the mould that ran, so its shots and maintenance follow
+    shots: int | None = Field(default=None, gt=0, le=10_000_000)
 
     @model_validator(mode="after")
     def _totals(self) -> "ShiftIn":
+        if (self.mould_id is None) != (self.shots is None):
+            raise ValueError("Give the mould and its shots together")
         if sum(d.minutes for d in self.downtime) > SHIFT_MINUTES:
             raise ValueError(f"Downtime cannot exceed the {SHIFT_MINUTES}-minute shift")
         if self.good_qty == 0 and not self.rejects and not self.downtime:
@@ -105,15 +109,19 @@ class ShiftOut(BaseModel):
     good_qty: Decimal
     reject_qty: Decimal
     downtime_minutes: int
+    mould_code: str | None
+    shots: int | None
     losses: list[LossOut]
 
 
 SHIFT_SQL = (
     "SELECT s.shift_entry_id, s.unit_id, s.work_order_id, w.work_order_no, s.machine_id, "
     "m.code AS machine_code, u.display_name AS operator, s.work_date, s.shift_code, s.good_qty, "
-    "s.reject_qty, s.downtime_minutes FROM erp.shift_production s JOIN erp.work_order w ON "
+    "s.reject_qty, s.downtime_minutes, mo.code AS mould_code, s.shots FROM "
+    "erp.shift_production s JOIN erp.work_order w ON "
     "w.work_order_id = s.work_order_id JOIN erp.machine m ON m.machine_id = s.machine_id JOIN "
-    "erp.app_user u ON u.user_id = s.operator_id"
+    "erp.app_user u ON u.user_id = s.operator_id LEFT JOIN erp.mould mo ON "
+    "mo.mould_id = s.mould_id"
 )
 
 
@@ -152,17 +160,26 @@ async def record_shift(body: ShiftIn, ctx: Ctx = Depends(enter)) -> ShiftOut:
                         {"id": body.machine_id})
     if machine is None or not machine["active"] or machine["unit_id"] != wo["unit_id"]:
         raise HTTPException(422, "The machine must be an active machine of the order's plant")
+    if body.mould_id is not None:
+        mould = await one(ctx, "SELECT unit_id, active FROM erp.mould WHERE mould_id = :id "
+                          "FOR UPDATE", {"id": body.mould_id})
+        if mould is None or not mould["active"] or mould["unit_id"] != wo["unit_id"]:
+            raise HTTPException(422, "The mould must be an active mould of the order's plant")
     with db_errors("This machine already has an entry for that shift and work order"):
         created = await one(
             ctx, "INSERT INTO erp.shift_production(tenant_id, unit_id, work_order_id, machine_id, "
-            "operator_id, work_date, shift_code, good_qty, reject_qty, downtime_minutes) VALUES "
-            "(erp.current_tenant_id(), :u, :w, :m, :me, :d, :s, :g, :r, :t) "
-            "RETURNING shift_entry_id",
+            "operator_id, work_date, shift_code, good_qty, reject_qty, downtime_minutes, "
+            "mould_id, shots) VALUES (erp.current_tenant_id(), :u, :w, :m, :me, :d, :s, :g, "
+            ":r, :t, :mould, :shots) RETURNING shift_entry_id",
             {"u": wo["unit_id"], "w": body.work_order_id, "m": body.machine_id,
              "me": ctx.principal.profile.app_user_id, "d": body.work_date, "s": body.shift_code,
              "g": body.good_qty, "r": sum((x.quantity for x in body.rejects), Decimal(0)),
-             "t": sum(x.minutes for x in body.downtime)})
+             "t": sum(x.minutes for x in body.downtime), "mould": body.mould_id,
+             "shots": body.shots})
     assert created is not None
+    if body.mould_id is not None:  # the mould's shots, and so its maintenance, follow production
+        await rows(ctx, "UPDATE erp.mould SET shots_done = shots_done + :s WHERE mould_id = :id "
+                   "RETURNING mould_id", {"s": body.shots, "id": body.mould_id})
     for rej in body.rejects:
         await rows(
             ctx, "INSERT INTO erp.shift_loss(tenant_id, shift_entry_id, kind, reason, quantity) "
