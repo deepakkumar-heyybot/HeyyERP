@@ -94,6 +94,11 @@ SETTINGS: tuple[SettingDef, ...] = (
                "April, with the financial year)", "DEFAULT", minimum=1, maximum=12),
     SettingDef("leaveCountSundays", "bool", False, "Sundays inside a leave count as leave days",
                "DEFAULT"),
+    SettingDef("leaveHolidaysCount", "bool", False, "Company holidays inside a leave count as "
+               "leave days (off: they do not)", "DEFAULT"),
+    SettingDef("leaveAccrual", "enum", "YEARLY", "How leave is earned: the whole year's days at "
+               "the start (YEARLY) or one twelfth each month (MONTHLY); a leave type can choose "
+               "its own", "DEFAULT", options=("YEARLY", "MONTHLY")),
     SettingDef("appraisalMaxScore", "int", 5, "Highest score an appraisal can be given",
                "DEFAULT", minimum=1, maximum=100),
     SettingDef("kaizenMaxScore", "int", 10, "Highest score a kaizen evaluation can give",

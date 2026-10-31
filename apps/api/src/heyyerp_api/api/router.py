@@ -18,6 +18,7 @@ from heyyerp_api.finance.receivables import router as receivables_router
 from heyyerp_api.finance.tds import router as tds_router
 from heyyerp_api.hr.appraisals import router as appraisals_router
 from heyyerp_api.hr.attendance import router as attendance_router
+from heyyerp_api.hr.calendar import router as calendar_router
 from heyyerp_api.hr.employees import router as employees_router
 from heyyerp_api.hr.kaizen import router as kaizen_router
 from heyyerp_api.hr.leave import router as leave_router
@@ -115,4 +116,5 @@ api_router.include_router(leave_router)
 api_router.include_router(attendance_router)
 api_router.include_router(appraisals_router)
 api_router.include_router(kaizen_router)
+api_router.include_router(calendar_router)
 api_router.include_router(tds_router)

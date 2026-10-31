@@ -566,6 +566,16 @@
    "default": false,
    "rule": "DEFAULT"
   },
+  "leaveHolidaysCount": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "leaveAccrual": {
+   "kind": "enum",
+   "default": "YEARLY",
+   "rule": "DEFAULT"
+  },
   "appraisalMaxScore": {
    "kind": "int",
    "default": 5,

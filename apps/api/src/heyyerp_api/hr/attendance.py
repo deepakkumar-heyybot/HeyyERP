@@ -10,7 +10,7 @@ days. Needs hr.manage; reading needs the hr module.
 """
 
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.hr.calendar import holidays_between, shifts_for
 from heyyerp_api.hr.employees import manage, read
 from heyyerp_api.hr.leave import count_days
 from heyyerp_api.masters.common import (
@@ -39,6 +40,7 @@ Source = Literal["MANUAL", "BIOMETRIC", "IMPORT"]
 SHIFT = Field(default="A", min_length=1, max_length=10, pattern=r"^[A-Za-z0-9]+$")
 # ponytail: one time zone for the day boundary (all V-Rub plants are in India)
 DAY = "(check_in AT TIME ZONE 'Asia/Kolkata')::date"
+IST = timezone(timedelta(hours=5, minutes=30))  # India has no daylight saving
 
 
 class AttendanceIn(Strict):
@@ -88,6 +90,8 @@ class SummaryRow(BaseModel):
     hours_worked: Decimal
     leave_days: Decimal
     absent_days: Decimal
+    late_days: int  # check-in after the shift's start plus its grace
+    early_leaving_days: int  # check-out before the shift ends
 
 
 ATT_SQL = (
@@ -203,7 +207,10 @@ async def summary(unit_id: UUID, month: date, ctx: Ctx = Depends(read)) -> list[
     if first > date.today():
         raise HTTPException(422, "That month has not started")
     sundays = bool(await rules.get_value(ctx, "leaveCountSundays"))
-    working = count_days(first, last, False, sundays)
+    off = await holidays_between(ctx, unit_id, first, last)
+    working = count_days(first, last, False, sundays, off)
+    shifts = await shifts_for(ctx, unit_id)
+    leave_off = set() if await rules.get_value(ctx, "leaveHolidaysCount") else off
     out: list[SummaryRow] = []
     people = await rows(
         ctx, "SELECT employee_id, employee_no, full_name FROM erp.employee WHERE unit_id = :u AND "
@@ -221,11 +228,28 @@ async def summary(unit_id: UUID, month: date, ctx: Ctx = Depends(read)) -> list[
                 "employee_id = :e AND status = 'APPROVED' AND start_date <= :t AND end_date >= :f",
                 {"e": p["employee_id"], "f": first, "t": last}):
             leave += count_days(max(taken["start_date"], first), min(taken["end_date"], last),
-                                taken["half_day"], sundays)
+                                taken["half_day"], sundays, leave_off)
+        late = early = 0
+        for day in await rows(
+                ctx, "SELECT work_date, shift_code, check_in, check_out FROM erp.attendance WHERE "
+                "employee_id = :e AND work_date BETWEEN :f AND :t AND check_in IS NOT NULL",
+                {"e": p["employee_id"], "f": first, "t": last}):
+            shift = shifts.get(day["shift_code"])
+            if shift is None:
+                continue
+            begins = datetime.combine(day["work_date"], shift["start_time"], tzinfo=IST)
+            ends = datetime.combine(day["work_date"], shift["end_time"], tzinfo=IST)
+            if shift["end_time"] <= shift["start_time"]:  # runs past midnight
+                ends += timedelta(days=1)
+            if day["check_in"] > begins + timedelta(minutes=shift["grace_minutes"]):
+                late += 1
+            if day["check_out"] is not None and day["check_out"] < ends:
+                early += 1
         absent = max(Decimal(0), working - Decimal(present["d"]) - leave)
         out.append(SummaryRow(
             employee_id=p["employee_id"], employee_no=p["employee_no"], employee_name=p[
                 "full_name"], present_days=present["d"], hours_worked=round(
-                Decimal(present["h"]), 2), leave_days=leave, absent_days=absent))
+                Decimal(present["h"]), 2), leave_days=leave, absent_days=absent,
+            late_days=late, early_leaving_days=early))
     return out
 

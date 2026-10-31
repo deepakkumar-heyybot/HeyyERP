@@ -11,7 +11,7 @@ what is missing.
 
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -100,6 +100,7 @@ class LeaveTypeIn(Strict):
     name: str = Field(min_length=2, max_length=80)
     annual_default_days: Decimal = Field(ge=0, le=366, max_digits=8, decimal_places=2)
     unpaid: bool = False
+    accrual: Literal["YEARLY", "MONTHLY"] | None = None  # empty: the company rule
 
 
 class LeaveTypePatch(Strict):
@@ -107,6 +108,7 @@ class LeaveTypePatch(Strict):
     annual_default_days: Decimal | None = Field(default=None, ge=0, le=366, max_digits=8,
                                                 decimal_places=2)
     active: bool | None = None
+    accrual: Literal["YEARLY", "MONTHLY"] | None = None
 
 
 class LeaveTypeOut(BaseModel):
@@ -116,6 +118,7 @@ class LeaveTypeOut(BaseModel):
     annual_default_days: Decimal
     unpaid: bool
     active: bool
+    accrual: str | None
 
 
 EMP_SQL = (
@@ -340,7 +343,8 @@ async def team(employee_id: UUID, ctx: Ctx = Depends(apply_leave)) -> list[TeamM
 
 
 # ------------------------------------------------------------------ leave types
-LT_SQL = "SELECT leave_type_id, code, name, annual_default_days, unpaid, active FROM erp.leave_type"
+LT_SQL = ("SELECT leave_type_id, code, name, annual_default_days, unpaid, active, accrual "
+         "FROM erp.leave_type")
 
 
 @router.get("/leave-types", response_model=list[LeaveTypeOut])
@@ -352,11 +356,11 @@ async def list_leave_types(ctx: Ctx = Depends(apply_leave)) -> list[LeaveTypeOut
 async def create_leave_type(body: LeaveTypeIn, ctx: Ctx = Depends(manage)) -> LeaveTypeOut:
     with db_errors("A leave type with this code already exists"):
         created = await one(
-            ctx, "INSERT INTO erp.leave_type(tenant_id, code, name, annual_default_days, unpaid) "
-            "VALUES (erp.current_tenant_id(), :c, :n, :d, :u) RETURNING leave_type_id, code, "
-            "name, annual_default_days, unpaid, active",
+            ctx, "INSERT INTO erp.leave_type(tenant_id, code, name, annual_default_days, unpaid, "
+            "accrual) VALUES (erp.current_tenant_id(), :c, :n, :d, :u, :a) RETURNING "
+            "leave_type_id, code, name, annual_default_days, unpaid, active, accrual",
             {"c": body.code.upper(), "n": body.name, "d": body.annual_default_days,
-             "u": body.unpaid})
+             "u": body.unpaid, "a": body.accrual})
     assert created is not None
     await audit(ctx, "leave_type.create", "leave_type", created["leave_type_id"], body.model_dump())
     return LeaveTypeOut(**created)
@@ -371,7 +375,7 @@ async def update_leave_type(
         raise HTTPException(422, "Nothing to change")
     sets = ", ".join(f"{k} = :{k}" for k in changes)
     row = await one(ctx, f"UPDATE erp.leave_type SET {sets} WHERE leave_type_id = :id RETURNING "
-                    "leave_type_id, code, name, annual_default_days, unpaid, active",
+                    "leave_type_id, code, name, annual_default_days, unpaid, active, accrual",
                     {**changes, "id": leave_type_id})
     if row is None:
         raise not_found("Leave type")

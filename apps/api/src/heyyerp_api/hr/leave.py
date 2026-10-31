@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.hr.calendar import holidays_between
 from heyyerp_api.hr.employees import apply_leave, manage, may_view, my_employee, read
 from heyyerp_api.masters.common import (
     Ctx,
@@ -91,6 +92,7 @@ class BalanceOut(BaseModel):
     accrued_days: Decimal
     adjusted_days: Decimal
     used_days: Decimal
+    accrued_to_date: Decimal  # what has been earned so far (all of it unless accrual is monthly)
     pending_days: Decimal
     available_days: Decimal
 
@@ -111,10 +113,33 @@ def leave_year(day: date, start_month: int) -> int:
     return day.year if day.month >= start_month else day.year - 1
 
 
-def count_days(start: date, end: date, half: bool, sundays: bool) -> Decimal:
+def count_days(
+    start: date, end: date, half: bool, sundays: bool, holidays: set[date] | None = None
+) -> Decimal:
+    """Leave days in the range: Sundays only when the company counts them, and never the
+    holidays given (empty when the company counts holidays as leave)."""
+    off = holidays or set()
     days = sum(1 for i in range((end - start).days + 1)
-               if sundays or (start + timedelta(days=i)).weekday() != 6)
+               if (start + timedelta(days=i)) not in off
+               and (sundays or (start + timedelta(days=i)).weekday() != 6))
     return HALF if half and days else Decimal(days)
+
+
+def months_earned(year: int, start_month: int, ref: date, today: date) -> int:
+    """How many months of a leave year have been earned by `ref` (12 for a past year)."""
+    now = leave_year(today, start_month)
+    if year < now:
+        return 12
+    if year > now:
+        return 0
+    return max(0, min(12, (ref.year * 12 + ref.month) - (year * 12 + start_month) + 1))
+
+
+def earned(accrued: Decimal, mode: str, months: int) -> Decimal:
+    """The part of the yearly allowance earned so far: all of it, or a twelfth a month."""
+    if mode != "MONTHLY":
+        return accrued
+    return (accrued * months / 12).quantize(Decimal("0.01"))
 
 
 async def ensure_balance(ctx: Ctx, employee_id: UUID, type_id: UUID, year: int) -> dict[str, Any]:
@@ -173,16 +198,19 @@ async def apply(body: LeaveIn, ctx: Ctx = Depends(apply_leave)) -> LeaveOut:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can apply only for yourself")
     if employee["employment_status"] != "ACTIVE":
         raise HTTPException(status.HTTP_409_CONFLICT, "The employee has left")
-    kind = await one(ctx, "SELECT code, unpaid, active FROM erp.leave_type WHERE leave_type_id = "
-                     ":id", {"id": body.leave_type_id})
+    kind = await one(ctx, "SELECT code, unpaid, active, accrual FROM erp.leave_type WHERE "
+                     "leave_type_id = :id", {"id": body.leave_type_id})
     if kind is None or not kind["active"]:
         raise HTTPException(422, "The leave type does not exist or is not in use")
     start_month = int(await rules.get_value(ctx, "leaveYearStartMonth"))
     year = leave_year(body.start_date, start_month)
     if leave_year(body.end_date, start_month) != year:
         raise HTTPException(422, "A leave cannot run across two leave years; apply for each part")
+    off: set[date] = set()
+    if not await rules.get_value(ctx, "leaveHolidaysCount"):
+        off = await holidays_between(ctx, employee["unit_id"], body.start_date, body.end_date)
     days = count_days(body.start_date, body.end_date, body.half_day,
-                      bool(await rules.get_value(ctx, "leaveCountSundays")))
+                      bool(await rules.get_value(ctx, "leaveCountSundays")), off)
     if days <= 0:
         raise HTTPException(422, "There are no leave days in those dates")
     if await one(
@@ -194,8 +222,11 @@ async def apply(body: LeaveIn, ctx: Ctx = Depends(apply_leave)) -> LeaveOut:
     if not kind["unpaid"]:
         balance = await ensure_balance(ctx, employee_id, body.leave_type_id, year)
         held = await pending_days(ctx, employee_id, body.leave_type_id, year, start_month)
-        free = (balance["opening_days"] + balance["accrued_days"] + balance["adjusted_days"]
-                - balance["used_days"] - held)
+        mode = kind["accrual"] or str(await rules.get_value(ctx, "leaveAccrual"))
+        so_far = earned(balance["accrued_days"], mode, months_earned(
+            year, start_month, body.start_date, date.today()))
+        free = balance["opening_days"] + so_far + balance["adjusted_days"] - balance[
+            "used_days"] - held
         if days > free:
             raise HTTPException(status.HTTP_409_CONFLICT,
                                 f"Only {free} day(s) of {kind['code']} are available, {days} asked")
@@ -348,8 +379,9 @@ async def balances(
     start_month = int(await rules.get_value(ctx, "leaveYearStartMonth"))
     year = leave_year_ or leave_year(date.today(), start_month)
     out: list[BalanceOut] = []
-    for kind in await rows(ctx, "SELECT leave_type_id, code, unpaid FROM erp.leave_type WHERE "
-                           "active AND NOT unpaid ORDER BY code", {}):
+    default_mode = str(await rules.get_value(ctx, "leaveAccrual"))
+    for kind in await rows(ctx, "SELECT leave_type_id, code, unpaid, accrual FROM "
+                           "erp.leave_type WHERE active AND NOT unpaid ORDER BY code", {}):
         row = await one(
             ctx, "SELECT opening_days, accrued_days, adjusted_days, used_days FROM "
             "erp.leave_balance WHERE employee_id = :e AND leave_type_id = :t AND fiscal_year = :y",
@@ -361,10 +393,12 @@ async def balances(
             row = {"opening_days": ZERO, "accrued_days": default["annual_default_days"],
                    "adjusted_days": ZERO, "used_days": ZERO}
         held = await pending_days(ctx, target, kind["leave_type_id"], year, start_month)
+        so_far = earned(row["accrued_days"], kind["accrual"] or default_mode,
+                        months_earned(year, start_month, date.today(), date.today()))
         out.append(BalanceOut(
             leave_type_id=kind["leave_type_id"], leave_type_code=kind["code"], leave_year=year,
-            **row, pending_days=held,
-            available_days=row["opening_days"] + row["accrued_days"] + row["adjusted_days"]
+            **row, accrued_to_date=so_far, pending_days=held,
+            available_days=row["opening_days"] + so_far + row["adjusted_days"]
             - row["used_days"] - held))
     return out
 
