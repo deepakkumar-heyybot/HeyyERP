@@ -358,7 +358,7 @@ async def list_payments(
     payment_status: str | None = Query(None, alias="status"), page: Paging = Depends(),
     ctx: Ctx = Depends(read),
 ) -> Page[PaymentSummary]:
-    conditions: list[str] = []
+    conditions: list[str] = ["p.vendor_id IS NOT NULL"]  # customer receipts have their own list
     params: dict[str, Any] = {}
     clause, scope_params = scope_clause(ctx, "p.unit_id")
     if clause:

@@ -23,6 +23,29 @@ async def finance_enabled(ctx: Ctx, unit_id: UUID) -> bool:
     return found is not None
 
 
+async def post_sales_invoice(ctx: Ctx, invoice_id: UUID) -> UUID | None:
+    """Book a customer invoice: debit the customer, credit sales and GST output (once)."""
+    inv: dict[str, Any] | None = await one(
+        ctx, "SELECT unit_id, customer_id, invoice_no, issue_date, taxable_amount, tax_amount FROM "
+        "erp.customer_invoice WHERE invoice_id = :id", {"id": invoice_id})
+    if inv is None or not await finance_enabled(ctx, inv["unit_id"]):
+        return None
+    unit = inv["unit_id"]
+    lines = [LineIn(account_id=await role_account(ctx, unit, "RECEIVABLE"),
+                    debit=inv["taxable_amount"] + inv["tax_amount"], party_type="CUSTOMER",
+                    party_id=inv["customer_id"], description=f"Invoice {inv['invoice_no']}"),
+             LineIn(account_id=await role_account(ctx, unit, "SALES"),
+                    credit=inv["taxable_amount"])]
+    if inv["tax_amount"] > 0:
+        lines.append(LineIn(account_id=await role_account(ctx, unit, "GST_OUTPUT"),
+                            credit=inv["tax_amount"]))
+    if inv["taxable_amount"] == 0:
+        lines = lines[:1] + lines[2:]
+    return await post_entry(
+        ctx, unit_id=unit, journal_date=inv["issue_date"], source_type="CUSTOMER_INVOICE",
+        source_id=invoice_id, narration=f"Customer invoice {inv['invoice_no']}", lines=lines)
+
+
 async def post_grn_receipt(ctx: Ctx, grn_line_id: UUID) -> UUID | None:
     """Book the accepted quantity of a goods-receipt line at the PO price (once)."""
     line: dict[str, Any] | None = await one(

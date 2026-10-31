@@ -164,7 +164,8 @@ async def load(ctx: Ctx, so_id: UUID) -> SoOut | None:
 async def credit_position(
     ctx: Ctx, customer_id: UUID, extra: Decimal = Decimal(0), exclude_so: UUID | None = None
 ) -> dict[str, Any]:
-    """Open order value (unshipped part) plus invoiced value, against the customer's limit."""
+    """Open orders plus invoices still unpaid (less receipts not yet applied), against the limit,
+    and what is overdue."""
     customer = await one(ctx, "SELECT code, name, credit_limit FROM erp.customer WHERE "
                          "customer_id = :id", {"id": customer_id})
     if customer is None:
@@ -176,14 +177,25 @@ async def credit_position(
         "l.tax_code_id WHERE s.customer_id = :c AND s.status IN ('OPEN', 'PARTIALLY_SHIPPED') "
         "AND (CAST(:ex AS uuid) IS NULL OR s.so_id <> :ex)", {"c": customer_id, "ex": exclude_so})
     invoiced = await one(
-        ctx, "SELECT COALESCE(sum(taxable_amount + tax_amount), 0) AS v FROM "
-        "erp.customer_invoice WHERE customer_id = :c AND status <> 'CANCELLED'",
-        {"c": customer_id})
-    assert open_orders is not None and invoiced is not None
-    exposure = open_orders["v"] + invoiced["v"] + extra
+        ctx, "SELECT COALESCE(sum(taxable_amount + tax_amount), 0) AS v, COALESCE(sum(paid_amount),"
+        " 0) AS paid, COALESCE(sum(taxable_amount + tax_amount - paid_amount) FILTER (WHERE "
+        "due_date < CURRENT_DATE AND taxable_amount + tax_amount > paid_amount), 0) AS late, "
+        "count(*) FILTER (WHERE due_date < CURRENT_DATE AND taxable_amount + tax_amount > "
+        "paid_amount) AS late_count FROM erp.customer_invoice WHERE customer_id = :c AND "
+        "status = 'ISSUED'", {"c": customer_id})
+    unapplied = await one(
+        ctx, "SELECT COALESCE(sum(p.amount - COALESCE((SELECT sum(a.allocated_amount) FROM "
+        "erp.payment_allocation a WHERE a.payment_id = p.payment_id), 0)), 0) AS v FROM "
+        "erp.payment p WHERE p.customer_id = :c AND p.status = 'RECEIVED'", {"c": customer_id})
+    assert open_orders is not None and invoiced is not None and unapplied is not None
+    owed = invoiced["v"] - invoiced["paid"]
+    exposure = open_orders["v"] + max(owed - unapplied["v"], Decimal(0)) + extra
     limit = customer["credit_limit"]
     return {"customer_code": customer["code"], "credit_limit": limit,
-            "open_orders": open_orders["v"], "invoiced": invoiced["v"], "exposure": exposure,
+            "open_orders": open_orders["v"], "invoiced": invoiced["v"],
+            "received": invoiced["paid"],
+            "unapplied_receipts": unapplied["v"], "overdue_amount": invoiced["late"],
+            "overdue_invoices": invoiced["late_count"], "exposure": exposure,
             "over_limit": limit is not None and exposure > limit,
             "available": None if limit is None else limit - exposure}
 
@@ -191,15 +203,19 @@ async def credit_position(
 async def credit_warnings(
     ctx: Ctx, customer_id: UUID, extra: Decimal, exclude_so: UUID | None = None
 ) -> list[str]:
-    """A warning when the customer would be over the limit; an error when the rule says block."""
+    """Warnings when the customer would be over the limit or has overdue invoices; with the rule
+    `creditLimitBlock` on, either is an error instead."""
     position = await credit_position(ctx, customer_id, extra, exclude_so)
-    if not position["over_limit"]:
-        return []
-    text = (f"Customer {position['customer_code']} would be over the credit limit: "
-            f"{position['exposure']} against {position['credit_limit']}")
-    if await rules.get_value(ctx, "creditLimitBlock"):
-        raise HTTPException(status.HTTP_409_CONFLICT, text)
-    return [text]
+    found: list[str] = []
+    if position["over_limit"]:
+        found.append(f"Customer {position['customer_code']} would be over the credit limit: "
+                     f"{position['exposure']} against {position['credit_limit']}")
+    if position["overdue_invoices"]:
+        found.append(f"Customer {position['customer_code']} has {position['overdue_invoices']} "
+                     f"overdue invoice(s) totalling {position['overdue_amount']}")
+    if found and await rules.get_value(ctx, "creditLimitBlock"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "; ".join(found))
+    return found
 
 
 async def refresh_status(ctx: Ctx, so_id: UUID) -> None:
@@ -434,6 +450,10 @@ class CreditOut(BaseModel):
     credit_limit: Decimal | None
     open_orders: Decimal
     invoiced: Decimal
+    received: Decimal
+    unapplied_receipts: Decimal
+    overdue_amount: Decimal
+    overdue_invoices: int
     exposure: Decimal
     available: Decimal | None
     over_limit: bool

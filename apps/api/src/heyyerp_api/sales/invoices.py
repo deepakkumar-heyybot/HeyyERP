@@ -17,6 +17,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.autopost import post_sales_invoice
+from heyyerp_api.finance.journals import ReverseIn, reverse_journal
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
@@ -75,6 +77,10 @@ class InvoiceSummary(BaseModel):
     irn: str | None
     ewb_no: str | None
     handoff_status: str  # PENDING until the IRN is recorded, then DONE (CANCELLED if cancelled)
+    paid_amount: Decimal
+    outstanding: Decimal
+    payment_status: str  # UNPAID, PART_PAID or PAID
+    journal_id: UUID | None
 
 
 class InvoiceOut(InvoiceSummary):
@@ -88,7 +94,10 @@ INVOICE_SQL = (
     "v.dispatch_id, d.dispatch_no, v.issue_date, v.due_date, v.taxable_amount, v.tax_amount, "
     "v.taxable_amount + v.tax_amount AS gross_amount, v.status, v.irn, v.ewb_no, v.irn_ack_no, "
     "CASE WHEN v.status = 'CANCELLED' THEN 'CANCELLED' WHEN v.irn IS NULL THEN 'PENDING' "
-    "ELSE 'DONE' END AS handoff_status FROM erp.customer_invoice v JOIN erp.customer c ON "
+    "ELSE 'DONE' END AS handoff_status, v.paid_amount, v.taxable_amount + v.tax_amount - "
+    "v.paid_amount AS outstanding, CASE WHEN v.paid_amount = 0 THEN 'UNPAID' WHEN "
+    "v.paid_amount >= v.taxable_amount + v.tax_amount THEN 'PAID' ELSE 'PART_PAID' END AS "
+    "payment_status, v.journal_id FROM erp.customer_invoice v JOIN erp.customer c ON "
     "c.customer_id = v.customer_id JOIN erp.dispatch d ON d.dispatch_id = v.dispatch_id"
 )
 
@@ -151,6 +160,10 @@ async def invoice_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Inv
             ":inv, :l, :i, :q, :p, :net, :tax) RETURNING invoice_line_id",
             {"inv": created["invoice_id"], "l": ln["so_line_id"], "i": ln["item_id"],
              "q": ln["quantity"], "p": ln["unit_price"], "net": ln["net"], "tax": ln["tax"]})
+    journal_id = await post_sales_invoice(ctx, created["invoice_id"])
+    if journal_id is not None:
+        await rows(ctx, "UPDATE erp.customer_invoice SET journal_id = :j WHERE invoice_id = :id "
+                   "RETURNING invoice_id", {"j": journal_id, "id": created["invoice_id"]})
     warnings = await orders.credit_warnings(ctx, order["customer_id"], Decimal(0))
     await audit(ctx, "invoice.create", "invoice", created["invoice_id"],
                 {"invoice_no": number, "dispatch_no": head["dispatch_no"],
@@ -199,7 +212,8 @@ async def get_invoice(invoice_id: UUID, ctx: Ctx = Depends(read)) -> InvoiceOut:
 async def require_invoice(ctx: Ctx, invoice_id: UUID) -> dict[str, Any]:
     clause, params = scope_clause(ctx, "unit_id")
     head = await one(
-        ctx, "SELECT invoice_id, invoice_no, status, irn, ewb_no, unit_id FROM "
+        ctx, "SELECT invoice_id, invoice_no, status, irn, ewb_no, unit_id, paid_amount, "
+        "journal_id FROM "
         f"erp.customer_invoice WHERE invoice_id = :id{' AND ' + clause if clause else ''} "
         "FOR UPDATE", {**params, "id": invoice_id})
     if head is None:
@@ -218,8 +232,17 @@ async def cancel_invoice(invoice_id: UUID, ctx: Ctx = Depends(manage)) -> Invoic
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "An e-invoice or e-way bill is recorded; cancel it with the GST portal first")
-    await rows(ctx, "UPDATE erp.customer_invoice SET status = 'CANCELLED' WHERE invoice_id = :id "
-               "RETURNING invoice_id", {"id": invoice_id})
+    if head["paid_amount"] > 0:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Receipts are applied to this invoice; reverse them first")
+    reversal = None
+    if head["journal_id"] is not None:
+        reversed_ = await reverse_journal(
+            head["journal_id"], ReverseIn(reason=f"Invoice {head['invoice_no']} cancelled"), ctx)
+        reversal = reversed_.journal_id
+    await rows(ctx, "UPDATE erp.customer_invoice SET status = 'CANCELLED', "
+               "reversal_journal_id = :r WHERE invoice_id = :id RETURNING invoice_id",
+               {"r": reversal, "id": invoice_id})
     await audit(ctx, "invoice.cancel", "invoice", invoice_id, {"invoice_no": head["invoice_no"]})
     result = await load(ctx, invoice_id)
     assert result is not None

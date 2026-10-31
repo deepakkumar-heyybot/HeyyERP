@@ -545,6 +545,7 @@
   "po": "PO",
   "prod_lot": "PL",
   "quote": "QT",
+  "receipt": "RCT",
   "return": "RET",
   "rfq": "RFQ",
   "sales_order": "SO",
