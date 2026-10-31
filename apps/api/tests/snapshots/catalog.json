@@ -556,6 +556,21 @@
    "default": "REFUSE",
    "rule": "DEFAULT"
   },
+  "leaveYearStartMonth": {
+   "kind": "int",
+   "default": 1,
+   "rule": "DEFAULT"
+  },
+  "leaveCountSundays": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "appraisalMaxScore": {
+   "kind": "int",
+   "default": 5,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,
@@ -612,7 +627,9 @@
   "bom",
   "count",
   "indent",
+  "leave",
   "po",
+  "review",
   "scrap",
   "vendor"
  ]
