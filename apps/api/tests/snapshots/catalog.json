@@ -546,6 +546,21 @@
    "default": 7,
    "rule": "DEFAULT"
   },
+  "depreciationConvention": {
+   "kind": "enum",
+   "default": "PRO_RATA_DAYS",
+   "rule": "DEFAULT"
+  },
+  "depreciationLateBooking": {
+   "kind": "enum",
+   "default": "REFUSE",
+   "rule": "DEFAULT"
+  },
+  "salvageMaxPct": {
+   "kind": "int",
+   "default": 5,
+   "rule": "DEFAULT"
+  },
   "msmePayDays": {
    "kind": "int",
    "default": 45,

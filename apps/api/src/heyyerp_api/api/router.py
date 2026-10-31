@@ -6,6 +6,7 @@ from heyyerp_api.api.health import router as health_router
 from heyyerp_api.api.me import router as me_router
 from heyyerp_api.business_rules.api import router as business_rules_router
 from heyyerp_api.finance.accounts import router as accounts_router
+from heyyerp_api.finance.assets import router as assets_router
 from heyyerp_api.finance.bills import router as bills_router
 from heyyerp_api.finance.consolidation import router as consolidation_router
 from heyyerp_api.finance.costing import router as costing_router
@@ -100,6 +101,7 @@ api_router.include_router(payments_router)
 api_router.include_router(receivables_router)
 api_router.include_router(gst_router)
 api_router.include_router(costing_router)
+api_router.include_router(assets_router)
 api_router.include_router(consolidation_router)
 api_router.include_router(pm_router)
 api_router.include_router(breakdowns_router)

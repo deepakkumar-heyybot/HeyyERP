@@ -81,6 +81,17 @@ SETTINGS: tuple[SettingDef, ...] = (
                "to work in progress to finished goods) in plants that have a chart", "DEFAULT"),
     SettingDef("pmDueSoonDays", "int", 7, "Days before a preventive maintenance falls due that "
                "it is flagged as due soon", "DEFAULT", minimum=0, maximum=90),
+    SettingDef("depreciationConvention", "enum", "PRO_RATA_DAYS", "From when an asset is "
+               "depreciated: "
+               "the day it is put to use (PRO_RATA_DAYS), the whole month it was put to use "
+               "(FULL_MONTH) or the month after (NEXT_MONTH)", "DEFAULT",
+               options=("PRO_RATA_DAYS", "FULL_MONTH", "NEXT_MONTH")),
+    SettingDef("depreciationLateBooking", "enum", "REFUSE", "Depreciation of a month whose "
+               "posting date has passed: REFUSE it (a closed month stays closed) or "
+               "BOOK_IN_CURRENT_MONTH (booked now, with the month named in the narration)",
+               "DEFAULT", options=("REFUSE", "BOOK_IN_CURRENT_MONTH")),
+    SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
+               "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",
                minimum=1, maximum=365),
 )

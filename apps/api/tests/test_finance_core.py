@@ -59,13 +59,13 @@ def posted(make_client, w, **kw):
 def test_default_chart_maps_the_posting_roles_and_can_be_repeated(make_client):
     w = finance_world(make_client)
     acct = Fresh(make_client, "ACCOUNTS")
-    assert len(w["acc"]) == 26 and w["acc"]["1100"]
+    assert len(w["acc"]) == 29 and w["acc"]["1100"]
     roles = {r["role"]: r["account_code"] for r in acct.get(
         f"{F}/account-roles?unit_id={w['unit']['unit_id']}").json()}
     assert roles["BANK"] == "1010" and roles["RECEIVABLE"] == "1100" and roles["PAYABLE"] == "2000"
     assert roles["GRN_CLEARING"] == "2010" and roles["SALES"] == "4000"
     again = acct.post(f"{F}/accounts/seed-default", json={"unit_id": w["unit"]["unit_id"]})
-    assert again.status_code == 200 and len(again.json()) == 26  # nothing duplicated
+    assert again.status_code == 200 and len(again.json()) == 29  # nothing duplicated
     other = acct.put(f"{F}/account-roles", json={
         "unit_id": w["unit"]["unit_id"], "role": "BANK", "account_id": w["acc"]["1000"]})
     assert other.status_code == 200 and other.json()["account_code"] == "1000"

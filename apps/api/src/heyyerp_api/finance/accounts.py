@@ -46,6 +46,8 @@ DEFAULT_CHART: list[tuple[str, str, str, str | None]] = [
     ("1300", "GST input credit", "ASSET", "GST_INPUT"),
     ("1400", "Advances to suppliers", "ASSET", None),
     ("1500", "Inter-unit receivable", "ASSET", "INTER_UNIT_RECEIVABLE"),
+    ("1600", "Fixed assets at cost", "ASSET", "FIXED_ASSETS"),
+    ("1690", "Accumulated depreciation", "ASSET", "ACCUM_DEPRECIATION"),
     ("2000", "Accounts payable", "LIABILITY", "PAYABLE"),
     ("2010", "Goods received not billed", "LIABILITY", "GRN_CLEARING"),
     ("2100", "GST output", "LIABILITY", "GST_OUTPUT"),
@@ -63,6 +65,7 @@ DEFAULT_CHART: list[tuple[str, str, str, str | None]] = [
     ("5400", "Price and quantity differences", "EXPENSE", "PURCHASE_VARIANCE"),
     ("5500", "Freight and other expenses", "EXPENSE", None),
     ("5600", "Inter-unit purchases", "EXPENSE", "INTER_UNIT_PURCHASES"),
+    ("5700", "Depreciation", "EXPENSE", "DEPRECIATION_EXPENSE"),
 ]
 ROLES = tuple(r for _, _, _, r in DEFAULT_CHART if r)
 
