@@ -19,6 +19,7 @@ from heyyerp_api.finance.tds import router as tds_router
 from heyyerp_api.hr.appraisals import router as appraisals_router
 from heyyerp_api.hr.attendance import router as attendance_router
 from heyyerp_api.hr.employees import router as employees_router
+from heyyerp_api.hr.kaizen import router as kaizen_router
 from heyyerp_api.hr.leave import router as leave_router
 from heyyerp_api.inventory.counts import router as counts_router
 from heyyerp_api.inventory.grn import router as grn_router
@@ -113,4 +114,5 @@ api_router.include_router(employees_router)
 api_router.include_router(leave_router)
 api_router.include_router(attendance_router)
 api_router.include_router(appraisals_router)
+api_router.include_router(kaizen_router)
 api_router.include_router(tds_router)

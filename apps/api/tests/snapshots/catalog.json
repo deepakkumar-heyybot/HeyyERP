@@ -571,6 +571,11 @@
    "default": 5,
    "rule": "DEFAULT"
   },
+  "kaizenMaxScore": {
+   "kind": "int",
+   "default": 10,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,
@@ -595,6 +600,7 @@
   "invoice": "INV",
   "issue": "ISS",
   "journal": "JV",
+  "kaizen": "KZ",
   "ncr": "NCR",
   "packing": "PK",
   "payment": "PAY",
@@ -627,6 +633,7 @@
   "bom",
   "count",
   "indent",
+  "kaizen",
   "leave",
   "po",
   "review",
