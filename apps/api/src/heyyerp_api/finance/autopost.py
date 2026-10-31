@@ -8,9 +8,11 @@ billed", which the supplier bill later clears.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from heyyerp_api.business_rules import service as rules
 from heyyerp_api.finance.accounts import role_account
 from heyyerp_api.finance.journals import LineIn, post_entry
 from heyyerp_api.inventory.ledger import money
@@ -21,6 +23,25 @@ async def finance_enabled(ctx: Ctx, unit_id: UUID) -> bool:
     found = await one(ctx, "SELECT 1 AS x FROM erp.account_role WHERE unit_id = :u AND role = "
                       "'GRN_CLEARING'", {"u": unit_id})
     return found is not None
+
+
+async def book(
+    ctx: Ctx, *, unit_id: UUID, source_type: str, source_id: UUID, narration: str,
+    amounts: list[tuple[str, Decimal, Decimal]], day: date | None = None, production: bool = False,
+) -> UUID | None:
+    """Post (role, debit, credit) lines for a plant once per source; None when the plant has no
+    chart, the production-posting rule is off (for production postings) or there is no value."""
+    if not any(debit or credit for _, debit, credit in amounts):
+        return None
+    if not await finance_enabled(ctx, unit_id):
+        return None
+    if production and not await rules.get_value(ctx, "productionPosting"):
+        return None
+    lines = [LineIn(account_id=await role_account(ctx, unit_id, role), debit=debit, credit=credit)
+             for role, debit, credit in amounts if debit or credit]
+    return await post_entry(ctx, unit_id=unit_id, journal_date=day or date.today(),
+                            source_type=source_type, source_id=source_id, narration=narration,
+                            lines=lines)
 
 
 async def post_sales_invoice(ctx: Ctx, invoice_id: UUID) -> UUID | None:

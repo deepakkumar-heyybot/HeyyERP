@@ -16,6 +16,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.autopost import book
+from heyyerp_api.finance.journals import ReverseIn, reverse_journal
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
@@ -128,6 +130,21 @@ async def raise_invoice(body: InterUnitIn, ctx: Ctx = Depends(manage)) -> InterU
          "n": number, "v": await transfer_value(ctx, body.transfer_id),
          "me": ctx.principal.profile.app_user_id})
     assert created is not None
+    value = await transfer_value(ctx, body.transfer_id)
+    sides = (("from_journal_id", transfer["from_unit_id"], "FROM", [
+        ("INTER_UNIT_RECEIVABLE", value, Decimal(0)), ("INTER_UNIT_SALES", Decimal(0), value)]),
+        ("to_journal_id", transfer["to_unit_id"], "TO", [
+            ("INTER_UNIT_PURCHASES", value, Decimal(0)),
+            ("INTER_UNIT_PAYABLE", Decimal(0), value)]))
+    for column, unit, kind, amounts in sides:
+        journal = await book(
+            ctx, unit_id=unit, source_type=f"INTER_UNIT_{kind}",
+            source_id=created["inter_unit_invoice_id"], narration=f"Inter-unit invoice {number}",
+            amounts=amounts)
+        if journal is not None:
+            await rows(ctx, f"UPDATE erp.inter_unit_invoice SET {column} = :j WHERE "
+                       "inter_unit_invoice_id = :id RETURNING inter_unit_invoice_id",
+                       {"j": journal, "id": created["inter_unit_invoice_id"]})
     await audit(ctx, "inter_unit.raise", "inter_unit_invoice", created["inter_unit_invoice_id"],
                 {"invoice_no": number, "transfer_no": transfer["transfer_no"]})
     result = await load(ctx, created["inter_unit_invoice_id"])
@@ -200,6 +217,13 @@ async def cancel_invoice(invoice_id: UUID, ctx: Ctx = Depends(manage)) -> InterU
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "An e-invoice or e-way bill is recorded; cancel it with the GST portal first")
+    for journal in await rows(
+            ctx, "SELECT from_journal_id AS j FROM erp.inter_unit_invoice WHERE "
+            "inter_unit_invoice_id = :id UNION ALL SELECT to_journal_id FROM "
+            "erp.inter_unit_invoice WHERE inter_unit_invoice_id = :id", {"id": invoice_id}):
+        if journal["j"] is not None:
+            await reverse_journal(journal["j"], ReverseIn(
+                reason=f"Inter-unit invoice {row['invoice_no']} cancelled"), ctx)
     await rows(ctx, "UPDATE erp.inter_unit_invoice SET status = 'CANCELLED' WHERE "
                "inter_unit_invoice_id = :id RETURNING inter_unit_invoice_id", {"id": invoice_id})
     await audit(ctx, "inter_unit.cancel", "inter_unit_invoice", invoice_id,

@@ -521,6 +521,26 @@
    "default": false,
    "rule": "DEFAULT"
   },
+  "costMethod": {
+   "kind": "enum",
+   "default": "ACTUAL",
+   "rule": "DEFAULT"
+  },
+  "overheadPct": {
+   "kind": "decimal",
+   "default": "0.00",
+   "rule": "DEFAULT"
+  },
+  "cogsTiming": {
+   "kind": "enum",
+   "default": "ON_DISPATCH",
+   "rule": "DEFAULT"
+  },
+  "productionPosting": {
+   "kind": "bool",
+   "default": true,
+   "rule": "DEFAULT"
+  },
   "msmePayDays": {
    "kind": "int",
    "default": 45,

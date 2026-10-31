@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.finance.autopost import book
 from heyyerp_api.inventory import ledger
 from heyyerp_api.inventory.issues import candidates, choose, store_in_scope
 from heyyerp_api.masters.common import (
@@ -179,6 +180,7 @@ async def weigh_batch(body: BatchIn, ctx: Ctx = Depends(move)) -> BatchOut:
     assert created is not None
     batch_id: UUID = created["batch_id"]
     steps = 0
+    material = Decimal(0)
     for line in plan:
         lots = await candidates(ctx, body.store_id, line["item_id"], lock=True)
         # raw material is always issued first-expiry-first
@@ -198,8 +200,9 @@ async def weigh_batch(body: BatchIn, ctx: Ctx = Depends(move)) -> BatchOut:
                 store_id=body.store_id, delta=-pick["take"], movement_type="ISSUE",
                 reference_type="BATCH", reference_id=batch_id,
                 idempotency_key=f"batch:{batch_id}:{steps}")
-            await ledger.take_layers(ctx, unit_id=store["unit_id"], item_id=line["item_id"],
-                                     quantity=pick["take"], issue_ledger_id=ledger_id)
+            material += await ledger.take_layers(
+                ctx, unit_id=store["unit_id"], item_id=line["item_id"], quantity=pick["take"],
+                issue_ledger_id=ledger_id)
             share = line["target"] * pick["take"] / line["actual"]
             await rows(
                 ctx, "INSERT INTO erp.batch_weighing_line(tenant_id, batch_id, recipe_line_id, "
@@ -207,6 +210,12 @@ async def weigh_batch(body: BatchIn, ctx: Ctx = Depends(move)) -> BatchOut:
                 ":l, :t, :a) RETURNING weighing_line_id",
                 {"b": batch_id, "r": line["recipe_line_id"], "l": pick["lot_id"],
                  "t": max(share.quantize(GRAM), GRAM), "a": pick["take"]})
+    await rows(ctx, "UPDATE erp.compound_batch SET material_cost = :c WHERE batch_id = :id "
+               "RETURNING batch_id", {"c": material, "id": batch_id})
+    await book(ctx, unit_id=store["unit_id"], source_type="BATCH_ISSUE", source_id=batch_id,
+               narration=f"Raw material weighed into batch {number}", production=True,
+               amounts=[("INVENTORY_WIP", material, Decimal(0)),
+                        ("INVENTORY_RM", Decimal(0), material)])
     await audit(ctx, "batch.weigh", "batch", batch_id,
                 {"batch_no": number, "compound_id": body.compound_id, "lots_drawn": steps})
     result = await load(ctx, batch_id)

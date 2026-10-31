@@ -19,6 +19,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book
 from heyyerp_api.inventory import ledger
 from heyyerp_api.inventory.issues import candidates, choose, store_in_scope
 from heyyerp_api.manufacturing.orders import upstream
@@ -264,6 +266,7 @@ async def confirm_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Dis
         "erp.dispatch_line dl JOIN erp.so_line l ON l.so_line_id = dl.so_line_id WHERE "
         "dl.dispatch_id = :id ORDER BY dl.lot_id", {"id": dispatch_id})
     shipped: dict[UUID, Decimal] = {}
+    cost_total = Decimal(0)
     for line in lines:
         ledger_id = await ledger.move(
             ctx, unit_id=head["unit_id"], item_id=line["item_id"], lot_id=line["lot_id"],
@@ -271,8 +274,9 @@ async def confirm_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Dis
             reference_type="DISPATCH", reference_id=dispatch_id,
             idempotency_key=f"dispatch:{dispatch_id}:{line['dispatch_line_id']}",
             consumes_reservation=line["quantity"])
-        await ledger.take_layers(ctx, unit_id=head["unit_id"], item_id=line["item_id"],
-                                 quantity=line["quantity"], issue_ledger_id=ledger_id)
+        cost_total += await ledger.take_layers(
+            ctx, unit_id=head["unit_id"], item_id=line["item_id"], quantity=line["quantity"],
+            issue_ledger_id=ledger_id)
         await rows(
             ctx, "UPDATE erp.stock_reservation SET status = 'CONSUMED' WHERE reference_type = "
             "'DISPATCH' AND reference = :r AND lot_id = :lot AND status = 'ACTIVE' "
@@ -294,9 +298,18 @@ async def confirm_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Dis
                        "so_schedule_id = :id RETURNING so_schedule_id",
                        {"q": take, "id": sched["so_schedule_id"]})
             left -= take
+    journal_id = None
+    if await rules.get_value(ctx, "cogsTiming") == "ON_DISPATCH":
+        journal_id = await book(
+            ctx, unit_id=head["unit_id"], source_type="DISPATCH_COGS", source_id=dispatch_id,
+            narration=f"Cost of goods dispatched {head['dispatch_no']}",
+            amounts=[("COST_OF_SALES", cost_total, Decimal(0)),
+                     ("INVENTORY_FG", Decimal(0), cost_total)])
     await rows(ctx, "UPDATE erp.dispatch SET status = 'DISPATCHED', dispatched_at = now(), "
-               "confirmed_by = :me WHERE dispatch_id = :id RETURNING dispatch_id",
-               {"me": ctx.principal.profile.app_user_id, "id": dispatch_id})
+               "confirmed_by = :me, cost_amount = :c, cogs_journal_id = :j WHERE dispatch_id = :id "
+               "RETURNING dispatch_id",
+               {"me": ctx.principal.profile.app_user_id, "c": cost_total, "j": journal_id,
+                "id": dispatch_id})
     await orders.refresh_status(ctx, head["so_id"])
     await audit(ctx, "dispatch.confirm", "dispatch", dispatch_id,
                 {"dispatch_no": head["dispatch_no"], "lines": len(lines)})

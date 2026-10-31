@@ -17,7 +17,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from heyyerp_api.finance.autopost import post_sales_invoice
+from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book, post_sales_invoice
 from heyyerp_api.finance.journals import ReverseIn, reverse_journal
 from heyyerp_api.masters.common import (
     Ctx,
@@ -164,6 +165,17 @@ async def invoice_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Inv
     if journal_id is not None:
         await rows(ctx, "UPDATE erp.customer_invoice SET journal_id = :j WHERE invoice_id = :id "
                    "RETURNING invoice_id", {"j": journal_id, "id": created["invoice_id"]})
+    if await rules.get_value(ctx, "cogsTiming") == "ON_INVOICE":
+        cost = (await one(ctx, "SELECT cost_amount FROM erp.dispatch WHERE dispatch_id = :id",
+                          {"id": dispatch_id}) or {"cost_amount": Decimal(0)})["cost_amount"]
+        cogs = await book(
+            ctx, unit_id=head["unit_id"], source_type="INVOICE_COGS",
+            source_id=created["invoice_id"], narration=f"Cost of sales {number}",
+            amounts=[("COST_OF_SALES", cost, Decimal(0)), ("INVENTORY_FG", Decimal(0), cost)])
+        if cogs is not None:
+            await rows(ctx, "UPDATE erp.customer_invoice SET cogs_journal_id = :j WHERE "
+                       "invoice_id = :id RETURNING invoice_id",
+                       {"j": cogs, "id": created["invoice_id"]})
     warnings = await orders.credit_warnings(ctx, order["customer_id"], Decimal(0))
     await audit(ctx, "invoice.create", "invoice", created["invoice_id"],
                 {"invoice_no": number, "dispatch_no": head["dispatch_no"],
@@ -213,7 +225,7 @@ async def require_invoice(ctx: Ctx, invoice_id: UUID) -> dict[str, Any]:
     clause, params = scope_clause(ctx, "unit_id")
     head = await one(
         ctx, "SELECT invoice_id, invoice_no, status, irn, ewb_no, unit_id, paid_amount, "
-        "journal_id FROM "
+        "journal_id, cogs_journal_id FROM "
         f"erp.customer_invoice WHERE invoice_id = :id{' AND ' + clause if clause else ''} "
         "FOR UPDATE", {**params, "id": invoice_id})
     if head is None:
@@ -240,6 +252,9 @@ async def cancel_invoice(invoice_id: UUID, ctx: Ctx = Depends(manage)) -> Invoic
         reversed_ = await reverse_journal(
             head["journal_id"], ReverseIn(reason=f"Invoice {head['invoice_no']} cancelled"), ctx)
         reversal = reversed_.journal_id
+    if head["cogs_journal_id"] is not None:  # the cost was recognised with the sale
+        await reverse_journal(head["cogs_journal_id"], ReverseIn(
+            reason=f"Invoice {head['invoice_no']} cancelled"), ctx)
     await rows(ctx, "UPDATE erp.customer_invoice SET status = 'CANCELLED', "
                "reversal_journal_id = :r WHERE invoice_id = :id RETURNING invoice_id",
                {"r": reversal, "id": invoice_id})

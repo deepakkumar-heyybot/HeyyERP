@@ -200,4 +200,5 @@ def test_the_customer_statement_runs_a_balance_and_permissions_hold(make_client,
             "unit_id": w["unit"]["unit_id"], "customer_id": w["customer"]["customer_id"],
             "amount": "10", "reference": "X"}).status_code == 403
     assert acct.get(f"{F}/receipts/00000000-0000-4000-8000-000000000000").status_code == 404
-    assert Fresh(make_client, "ACCOUNTS").get(f"{F}/payments").json()["total"] == 0  # supplier list
+    suppliers = Fresh(make_client, "ACCOUNTS").get(f"{F}/payments?limit=200").json()["items"]
+    assert not any(p["payment_no"].startswith("RCT-") for p in suppliers)  # receipts are separate

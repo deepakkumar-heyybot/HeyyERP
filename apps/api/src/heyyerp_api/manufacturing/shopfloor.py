@@ -14,12 +14,13 @@ Shift entries need mfg.entry, rework and returns route.move.
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book
 from heyyerp_api.finance.period import last_open_day
 from heyyerp_api.inventory import ledger
 from heyyerp_api.manufacturing.orders import (
@@ -334,7 +335,7 @@ async def return_material(
     lot = await lock_lot(ctx, prod_lot_id)
     used = await one(
         ctx, "SELECT c.consumption_id, c.quantity, c.returned_qty, c.source_lot_id, t.store_id, "
-        "t.item_id FROM erp.lot_consumption c JOIN erp.lot t ON t.lot_id = c.source_lot_id "
+        "t.item_id, c.cost FROM erp.lot_consumption c JOIN erp.lot t ON t.lot_id = c.source_lot_id "
         "WHERE c.prod_lot_id = :p AND c.consumption_type = 'RAW_MATERIAL' AND t.lot_no = :n "
         "ORDER BY c.consumed_at LIMIT 1 FOR UPDATE OF c",
         {"p": prod_lot_id, "n": body.source_lot_no})
@@ -349,10 +350,23 @@ async def return_material(
         store_id=used["store_id"], delta=body.quantity, movement_type="RECEIPT",
         reference_type="PROD_RETURN", reference_id=prod_lot_id,
         idempotency_key=f"prodreturn:{used['consumption_id']}:{used['returned_qty']}")
-    cost = await ledger.last_cost(ctx, lot["unit_id"], used["item_id"])
+    if used["cost"] > 0:  # back at the cost it was issued at
+        unit_cost = (used["cost"] / used["quantity"]).quantize(Decimal("0.000001"))
+    else:
+        unit_cost = await ledger.last_cost(ctx, lot["unit_id"], used["item_id"]) or Decimal(0)
+    value = ledger.money(unit_cost * body.quantity)
     await ledger.add_layer(ctx, ledger_id=ledger_id, item_id=used["item_id"],
                            lot_id=used["source_lot_id"], quantity=body.quantity,
-                           unit_cost=cost or Decimal(0))
+                           unit_cost=unit_cost)
+    await rows(ctx, "UPDATE erp.prod_lot SET material_cost = greatest(material_cost - :v, 0) "
+               "WHERE prod_lot_id = :id RETURNING prod_lot_id", {"v": value, "id": prod_lot_id})
+    await rows(ctx, "UPDATE erp.lot_consumption SET returned_cost = returned_cost + :v WHERE "
+               "consumption_id = :id RETURNING consumption_id",
+               {"v": value, "id": used["consumption_id"]})
+    await book(ctx, unit_id=lot["unit_id"], source_type="PROD_RETURN", source_id=uuid4(),
+               narration=f"Material returned from lot {lot['lot_no']}", production=True,
+               amounts=[("INVENTORY_RM", value, Decimal(0)),
+                        ("INVENTORY_WIP", Decimal(0), value)])
     await rows(ctx, "UPDATE erp.lot_consumption SET returned_qty = returned_qty + :q WHERE "
                "consumption_id = :id RETURNING consumption_id",
                {"q": body.quantity, "id": used["consumption_id"]})

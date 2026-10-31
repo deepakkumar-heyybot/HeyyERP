@@ -68,6 +68,17 @@ SETTINGS: tuple[SettingDef, ...] = (
     # Not numbered in the BRD: stated as defaults in use for unanswered questions.
     SettingDef("creditLimitBlock", "bool", False, "Block (not just warn) when a customer is over "
                "the credit limit", "DEFAULT"),
+    # Costing: each company chooses how finished goods and cost of sales are valued and booked.
+    SettingDef("costMethod", "enum", "ACTUAL", "Finished goods cost: ACTUAL (material issued plus "
+               "overhead) or STANDARD (the item's standard cost; the difference goes to production "
+               "variance)", "DEFAULT", options=("ACTUAL", "STANDARD")),
+    SettingDef("overheadPct", "decimal", "0.00", "Conversion cost added to the material cost of "
+               "a production lot (% of material cost)", "DEFAULT", minimum=0, maximum=500),
+    SettingDef("cogsTiming", "enum", "ON_DISPATCH", "When cost of sales is booked: when the goods "
+               "are dispatched or when the invoice is raised", "DEFAULT",
+               options=("ON_DISPATCH", "ON_INVOICE")),
+    SettingDef("productionPosting", "bool", True, "Book production to the accounts (raw material "
+               "to work in progress to finished goods) in plants that have a chart", "DEFAULT"),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",
                minimum=1, maximum=365),
 )

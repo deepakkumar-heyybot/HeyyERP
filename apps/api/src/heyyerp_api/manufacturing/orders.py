@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 
 from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book
+from heyyerp_api.finance.costing import finished_cost, lot_unit_cost
 from heyyerp_api.inventory import ledger
 from heyyerp_api.inventory.issues import candidates, choose, store_in_scope
 from heyyerp_api.manufacturing.batches import allocate
@@ -405,13 +407,14 @@ async def record_move(
 async def consume(
     ctx: Ctx, prod_lot_id: UUID, kind: str, quantity: Decimal, *, lot_id: UUID | None = None,
     batch_id: UUID | None = None, source_prod_lot_id: UUID | None = None,
+    cost: Decimal = Decimal(0),
 ) -> None:
     await rows(
         ctx, "INSERT INTO erp.lot_consumption(tenant_id, prod_lot_id, source_lot_id, "
-        "source_batch_id, source_prod_lot_id, consumption_type, quantity) VALUES "
-        "(erp.current_tenant_id(), :p, :l, :b, :s, :k, :q) RETURNING consumption_id",
+        "source_batch_id, source_prod_lot_id, consumption_type, quantity, cost) VALUES "
+        "(erp.current_tenant_id(), :p, :l, :b, :s, :k, :q, :c) RETURNING consumption_id",
         {"p": prod_lot_id, "l": lot_id, "b": batch_id, "s": source_prod_lot_id, "k": kind,
-         "q": quantity})
+         "q": quantity, "c": cost})
 
 
 async def draw_inserts(
@@ -485,17 +488,29 @@ async def start_lot(body: LotIn, ctx: Ctx = Depends(move_permission)) -> LotOut:
     lot_id: UUID = created["prod_lot_id"]
     issue_rule = await rules.get_value(ctx, "issueRule")
     steps = 0
+    material = Decimal(0)
+    raw_issued = Decimal(0)
     for component in sorted(components, key=lambda c: str(c["component_item_id"])):
         need = required(component, body.quantity)
         kind = kind_of(component)
         if kind == "COMPOUND":
             for batch_id, kilos in await allocate(ctx, wo["unit_id"], component["compound_id"],
                                                   need):
-                await consume(ctx, lot_id, "COMPOUND_BATCH", kilos, batch_id=batch_id)
+                per_kg = await one(
+                    ctx, "SELECT material_cost / total_kg AS c FROM erp.compound_batch WHERE "
+                    "batch_id = :id", {"id": batch_id})
+                assert per_kg is not None
+                cost = ledger.money(kilos * per_kg["c"])
+                material += cost
+                await consume(ctx, lot_id, "COMPOUND_BATCH", kilos, batch_id=batch_id,
+                              cost=cost)
         elif kind == "INSERT":
             for source_id, pieces in await draw_inserts(
                     ctx, wo["unit_id"], component["component_item_id"], need):
-                await consume(ctx, lot_id, "METAL_PROD_LOT", pieces, source_prod_lot_id=source_id)
+                cost = ledger.money(pieces * await lot_unit_cost(ctx, source_id))
+                material += cost
+                await consume(ctx, lot_id, "METAL_PROD_LOT", pieces, source_prod_lot_id=source_id,
+                              cost=cost)
         else:
             assert store is not None
             lots = await candidates(ctx, store["store_id"], component["component_item_id"],
@@ -515,10 +530,19 @@ async def start_lot(body: LotIn, ctx: Ctx = Depends(move_permission)) -> LotOut:
                     lot_id=pick["lot_id"], store_id=store["store_id"], delta=-pick["take"],
                     movement_type="ISSUE", reference_type="PROD_LOT", reference_id=lot_id,
                     idempotency_key=f"prodlot:{lot_id}:{steps}")
-                await ledger.take_layers(
+                cost = await ledger.take_layers(
                     ctx, unit_id=wo["unit_id"], item_id=component["component_item_id"],
                     quantity=pick["take"], issue_ledger_id=ledger_id)
-                await consume(ctx, lot_id, "RAW_MATERIAL", pick["take"], lot_id=pick["lot_id"])
+                material += cost
+                raw_issued += cost
+                await consume(ctx, lot_id, "RAW_MATERIAL", pick["take"], lot_id=pick["lot_id"],
+                              cost=cost)
+    await rows(ctx, "UPDATE erp.prod_lot SET material_cost = :c WHERE prod_lot_id = :id "
+               "RETURNING prod_lot_id", {"c": material, "id": lot_id})
+    await book(ctx, unit_id=wo["unit_id"], source_type="PROD_ISSUE", source_id=lot_id,
+               narration=f"Raw material issued to lot {number}", production=True,
+               amounts=[("INVENTORY_WIP", raw_issued, Decimal(0)),
+                        ("INVENTORY_RM", Decimal(0), raw_issued)])
     await record_move(ctx, lot_id, None, first["route_stage_id"], body.quantity, body.quantity,
                       Decimal(0), None)
     await rows(ctx, "UPDATE erp.work_order SET status = 'IN_PROGRESS' WHERE work_order_id = :id "
@@ -663,14 +687,29 @@ async def pack_lot(
         {"p": prod_lot_id, "s": body.fg_store_id, "me": ctx.principal.profile.app_user_id,
          "q": packed, "lb": label, "l": fg_lot["lot_id"]})
     assert packing is not None
-    # ponytail: finished goods enter stock at zero cost until Phase 10 costs production
+    costed = await one(ctx, "SELECT material_cost FROM erp.prod_lot WHERE prod_lot_id = :id",
+                       {"id": prod_lot_id})
+    assert costed is not None
+    unit_cost, material, conversion, basis = await finished_cost(
+        ctx, {**lot, "material_cost": costed["material_cost"]}, packed)
     ledger_id = await ledger.move(
         ctx, unit_id=lot["unit_id"], item_id=lot["item_id"], lot_id=fg_lot["lot_id"],
         store_id=body.fg_store_id, delta=packed, movement_type="RECEIPT",
         reference_type="PACKING", reference_id=packing["packing_id"],
         idempotency_key=f"packing:{packing['packing_id']}")
     await ledger.add_layer(ctx, ledger_id=ledger_id, item_id=lot["item_id"],
-                           lot_id=fg_lot["lot_id"], quantity=packed, unit_cost=Decimal(0))
+                           lot_id=fg_lot["lot_id"], quantity=packed, unit_cost=unit_cost)
+    value = ledger.money(unit_cost * packed)
+    await rows(ctx, "UPDATE erp.prod_lot SET conversion_cost = :cv, unit_cost = :u, cost_basis = "
+               ":b WHERE prod_lot_id = :id RETURNING prod_lot_id",
+               {"cv": conversion, "u": unit_cost, "b": basis, "id": prod_lot_id})
+    await book(ctx, unit_id=lot["unit_id"], source_type="PRODUCTION_RECEIPT",
+               source_id=packing["packing_id"], narration=f"Lot {lot['lot_no']} packed",
+               production=True,
+               amounts=[("INVENTORY_FG", value, Decimal(0)),
+                        ("INVENTORY_WIP", Decimal(0), material),
+                        ("PRODUCTION_VARIANCE", max(material - value, Decimal(0)),
+                         max(value - material, Decimal(0)))])
     await record_move(ctx, prod_lot_id, here["route_stage_id"], end["route_stage_id"], packed,
                       packed, Decimal(0), body.notes)
     await rows(
