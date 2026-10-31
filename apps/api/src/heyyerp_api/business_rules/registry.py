@@ -103,6 +103,9 @@ SETTINGS: tuple[SettingDef, ...] = (
                "DEFAULT", minimum=1, maximum=100),
     SettingDef("kaizenMaxScore", "int", 10, "Highest score a kaizen evaluation can give",
                "DEFAULT", minimum=1, maximum=100),
+    SettingDef("itHalfRateDays", "int", 180, "Income-tax book: an asset used for fewer than this "
+               "many days in the year it was bought gets half the rate that year (0 switches "
+               "the rule off)", "DEFAULT", minimum=0, maximum=366),
     SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
                "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",

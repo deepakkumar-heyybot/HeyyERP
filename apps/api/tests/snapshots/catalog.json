@@ -586,6 +586,11 @@
    "default": 10,
    "rule": "DEFAULT"
   },
+  "itHalfRateDays": {
+   "kind": "int",
+   "default": 180,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,

@@ -171,10 +171,18 @@ def in_service_from(acquired: date, convention: str) -> date:
     return acquired
 
 
+def tax_year_end(day: date) -> date:
+    """The last day of the Indian financial year (April to March) the day falls in."""
+    return date(day.year + (day.month >= 4), 3, 31)
+
+
 def carried_to(
-    asset: dict[str, Any], books: str, month_end: date, convention: str
+    asset: dict[str, Any], books: str, month_end: date, convention: str, half_days: int = 0
 ) -> Decimal:
-    """What the asset should have depreciated in total up to the end of `month_end`'s month."""
+    """What the asset should have depreciated in total up to the end of `month_end`'s month.
+
+    In the Income-tax book an asset used for fewer than `half_days` days of the year it was
+    bought gets half the rate for that year."""
     start = in_service_from(asset["acquisition_date"], convention)
     cost = asset["acquisition_cost"]
     if books == "INCOME_TAX":
@@ -187,6 +195,11 @@ def carried_to(
         return ZERO
     stop = asset["disposed_on"]
     total = ZERO
+    half_until = None
+    if books == "INCOME_TAX" and half_days > 0:
+        year_end = tax_year_end(asset["acquisition_date"])
+        if (year_end - asset["acquisition_date"]).days + 1 < half_days:
+            half_until = year_end
     year, month = start.year, start.month
     while (year, month) <= (month_end.year, month_end.month) and total < depreciable:
         days_in = monthrange(year, month)[1]
@@ -197,7 +210,8 @@ def carried_to(
         if active > 0:
             share = Decimal(active) / Decimal(days_in)
             if wdv:
-                dep = (cost - total) * rate / 1200 * share
+                cut = Decimal("0.5") if half_until and last <= half_until else Decimal(1)
+                dep = (cost - total) * rate / 1200 * share * cut
             else:
                 dep = depreciable / asset["useful_life_months"] * share
             total += min(dep.quantize(PAISA, rounding=ROUND_HALF_UP), depreciable - total)
@@ -267,9 +281,58 @@ async def update_asset(asset_id: UUID, body: AssetPatch, ctx: Ctx = Depends(mana
     return await load(ctx, asset_id)
 
 
+async def book_disposal(
+    ctx: Ctx, asset: AssetOut, body: DisposeIn
+) -> tuple[UUID | None, Decimal]:
+    """Post the disposal for a plant with a chart; returns the journal and the depreciation of
+    the part month it carried (nothing is posted, and nothing carried, without a chart)."""
+    if not await finance_enabled(ctx, asset.unit_id):
+        return None, ZERO
+    convention = str(await rules.get_value(ctx, "depreciationConvention"))
+    month = month_start(body.disposed_on)
+    before = date(month.year - (month.month == 1), (month.month - 2) % 12 + 1, 1)
+    if in_service_from(asset.acquisition_date, convention) < month:
+        done = await one(
+            ctx, "SELECT max(p.year_month) AS m FROM erp.depreciation_run r JOIN "
+            "erp.fiscal_period p ON p.period_id = r.period_id WHERE r.unit_id = :u AND "
+            "r.books = 'COMPANIES_ACT' AND r.status = 'POSTED'", {"u": asset.unit_id})
+        if done is None or done["m"] is None or done["m"] < before:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Post the depreciation up to {before:%B %Y} before disposing of this asset")
+    row = await one(ctx, "SELECT * FROM erp.fixed_asset WHERE asset_id = :id",
+                    {"id": asset.asset_id})
+    assert row is not None
+    row["disposed_on"] = body.disposed_on
+    month_end = date(month.year, month.month, monthrange(month.year, month.month)[1])
+    extra = max(ZERO, carried_to(row, "COMPANIES_ACT", month_end, convention)
+                - asset.accumulated_depreciation)
+    accumulated = asset.accumulated_depreciation + extra
+    gain = body.disposal_value - (asset.acquisition_cost - accumulated)
+    day, narration = body.disposed_on, f"Disposal of asset {asset.asset_code}"
+    try:
+        await ensure_accounting_open(ctx, asset.unit_id, body.disposed_on)
+    except HTTPException:
+        if await rules.get_value(ctx, "depreciationLateBooking") != "BOOK_IN_CURRENT_MONTH":
+            raise
+        day, narration = date.today(), f"{narration} (booked late)"
+    journal_id = await book(
+        ctx, unit_id=asset.unit_id, source_type="ASSET_DISPOSAL", source_id=asset.asset_id,
+        narration=narration, day=day,
+        amounts=[("DEPRECIATION_EXPENSE", extra, ZERO), ("ACCUM_DEPRECIATION", ZERO, extra),
+                 ("ACCUM_DEPRECIATION", accumulated, ZERO),
+                 ("FIXED_ASSETS", ZERO, asset.acquisition_cost),
+                 ("BANK", body.disposal_value, ZERO),
+                 ("ASSET_DISPOSAL_RESULT", max(-gain, ZERO), max(gain, ZERO))])
+    return journal_id, extra
+
+
 @router.post("/assets/{asset_id}/dispose", response_model=AssetOut)
 async def dispose(asset_id: UUID, body: DisposeIn, ctx: Ctx = Depends(manage)) -> AssetOut:
-    """Sold or scrapped: depreciation stops from this date. (Gain or loss is not booked yet.)"""
+    """Sold or scrapped: depreciation stops from this date. In a plant with a chart the disposal is
+    booked: the part month's depreciation, the asset and its accumulated depreciation taken off,
+    the proceeds to the bank and the difference to profit or loss on disposal. That needs the
+    depreciation of the earlier months posted first."""
     asset = await load(ctx, asset_id)
     if asset.status != "ACTIVE":
         raise HTTPException(status.HTTP_409_CONFLICT, "The asset is already disposed")
@@ -284,9 +347,12 @@ async def dispose(asset_id: UUID, body: DisposeIn, ctx: Ctx = Depends(manage)) -
             last_month.year, last_month.month, monthrange(last_month.year, last_month.month)[1]):
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "Depreciation has been run beyond that date; cancel those runs first")
+    journal_id, extra = await book_disposal(ctx, asset, body)
     await rows(ctx, "UPDATE erp.fixed_asset SET status = 'DISPOSED', disposed_on = :d, "
-               "disposal_value = :v WHERE asset_id = :id RETURNING asset_id",
-               {"d": body.disposed_on, "v": body.disposal_value, "id": asset_id})
+               "disposal_value = :v, disposal_journal_id = :j, disposal_depreciation = :x "
+               "WHERE asset_id = :id RETURNING asset_id",
+               {"d": body.disposed_on, "v": body.disposal_value, "j": journal_id, "x": extra,
+                "id": asset_id})
     await audit(ctx, "asset.dispose", "fixed_asset", asset_id,
                 {"disposed_on": body.disposed_on, "value": body.disposal_value})
     return await load(ctx, asset_id)
@@ -391,11 +457,13 @@ async def create_run(body: RunIn, ctx: Ctx = Depends(manage)) -> RunOut:
             raise HTTPException(status.HTTP_409_CONFLICT,
                                 "Runs go in month order; this month is already done")
     convention = str(await rules.get_value(ctx, "depreciationConvention"))
+    half_days = int(await rules.get_value(ctx, "itHalfRateDays"))
     assets = await rows(
         ctx, "SELECT a.*, COALESCE((SELECT sum(l.depreciation_amount) FROM erp.depreciation_line l "
         "JOIN erp.depreciation_run r ON r.depreciation_run_id = l.depreciation_run_id WHERE "
         "l.asset_id = a.asset_id AND r.status = 'POSTED' AND r.books = :b), 0) AS taken FROM "
-        "erp.fixed_asset a WHERE a.unit_id = :u AND a.acquisition_date <= :e ORDER BY a.asset_code",
+        "erp.fixed_asset a WHERE a.unit_id = :u AND a.acquisition_date <= :e AND "
+        "(:b = 'INCOME_TAX' OR a.disposal_journal_id IS NULL) ORDER BY a.asset_code",
         {"u": body.unit_id, "b": body.books, "e": month_end})
     period = await get_period(ctx, body.unit_id, first)
     created = await one(
@@ -409,7 +477,7 @@ async def create_run(body: RunIn, ctx: Ctx = Depends(manage)) -> RunOut:
     for a in assets:
         if body.books == "INCOME_TAX" and a["it_rate"] is None:
             continue
-        due = carried_to(a, body.books, month_end, convention) - a["taken"]
+        due = carried_to(a, body.books, month_end, convention, half_days) - a["taken"]
         if due <= 0:
             continue
         accumulated = a["taken"] + due

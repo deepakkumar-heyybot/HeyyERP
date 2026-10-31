@@ -233,8 +233,8 @@ def test_the_income_tax_book_is_a_separate_schedule_that_is_not_posted(make_clie
 
 
 # ------------------------------------------------------------------ disposal and the rest
-def test_disposal_stops_depreciation_and_respects_the_runs_already_made(make_client, api_database):
-    u = plant(make_client)
+def test_disposal_without_a_chart_only_stops_depreciation(make_client, api_database):
+    u = plant(make_client, chart=False)
     a = asset(make_client, u, first_of(3))
     acct = Fresh(make_client, "ACCOUNTS")
     day = first_of(2).replace(day=15)
@@ -250,17 +250,74 @@ def test_disposal_stops_depreciation_and_respects_the_runs_already_made(make_cli
     made = run(make_client, u, 2).json()
     assert amounts(made)[a["asset_code"]] == Decimal("2000.00") + part  # a full month, then 15 days
     assert Decimal(made["lines"][0]["accumulated_amount"]) == Decimal("2000.00") + part
-    post(make_client, made["depreciation_run_id"])
-    assert run(make_client, u, 1).status_code == 409  # nothing more to depreciate
+    post_run = Fresh(make_client, "ACCOUNTS").post(
+        f"{F}/depreciation-runs/{made['depreciation_run_id']}/post")
+    assert post_run.status_code == 409  # no chart: the Companies Act book cannot be posted
+    assert run(make_client, u, 1).status_code == 409  # a draft is waiting
+
+
+def test_disposal_is_booked_with_the_part_month_and_the_gain_or_loss(make_client, api_database):
+    u = plant(make_client)
+    a = asset(make_client, u, first_of(3))  # 120,000, 2,000 a month
+    acct = Fresh(make_client, "ACCOUNTS")
+    day = first_of(2).replace(day=15)
+    sale = {"disposed_on": day.isoformat(), "disposal_value": "90000"}
+    early = acct.post(f"{F}/assets/{a['asset_id']}/dispose", json=sale)
+    assert early.status_code == 409 and "Post the depreciation up to" in early.json()["detail"]
+    post(make_client, run(make_client, u, 3).json()["depreciation_run_id"])
+    locked = acct.post(f"{F}/assets/{a['asset_id']}/dispose", json=sale)
+    assert locked.status_code == 409 and "locked" in locked.json()["detail"]  # the month is shut
+    assert acct.get(f"{F}/assets/{a['asset_id']}").json()["status"] == "ACTIVE"
+    with Rules(make_client, depreciationLateBooking="BOOK_IN_CURRENT_MONTH"):
+        gone = acct.post(f"{F}/assets/{a['asset_id']}/dispose", json=sale)
+    assert gone.status_code == 200, gone.text
+    days = monthrange(day.year, day.month)[1]
+    part = (Decimal(2000) * 15 / days).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    books = books_of(make_client, u)
+    assert books["5700"] == 2000 + part  # the run's month and the part month
+    assert books["1690"] == 0  # all the accumulated depreciation is taken off
+    assert books["1600"] == -120000  # the asset's cost comes off
+    assert books["1010"] == 90000  # the proceeds
+    assert books["4300"] == (120000 - (2000 + part)) - 90000  # a loss: debit
+    assert acct.post(f"{F}/depreciation-runs", json={
+        "unit_id": u["unit_id"], "month": first_of(2).isoformat()}).status_code == 409
     other = plant(make_client)
     b = asset(make_client, other, first_of(3))
     post(make_client, run(make_client, other, 3).json()["depreciation_run_id"])
-    early = acct.post(f"{F}/assets/{b['asset_id']}/dispose", json={
-        "disposed_on": first_of(4).replace(day=1).isoformat()})
-    assert early.status_code == 422
-    sold_before_run = acct.post(f"{F}/assets/{b['asset_id']}/dispose", json={
-        "disposed_on": first_of(3).replace(day=2).isoformat()})
-    assert sold_before_run.status_code == 409  # a posted run already covers that month
+    assert acct.post(f"{F}/assets/{b['asset_id']}/dispose", json={
+        "disposed_on": first_of(4).replace(day=1).isoformat()}).status_code == 422
+    assert acct.post(f"{F}/assets/{b['asset_id']}/dispose", json={
+        "disposed_on": first_of(3).replace(day=2).isoformat()}).status_code == 409  # a run covers it
+
+
+def tax_expected(cost, rate, months, half_months=0):
+    """Written-down value by hand: the first `half_months` months at half the rate."""
+    total = Decimal(0)
+    for n in range(months):
+        cut = Decimal("0.5") if n < half_months else Decimal(1)
+        total += ((cost - total) * Decimal(rate) / 1200 * cut).quantize(
+            Decimal("0.01"), ROUND_HALF_UP)
+    return total
+
+
+def test_the_income_tax_half_rate_follows_the_company_rule(make_client, api_database):
+    def january_run(unit):
+        done = Fresh(make_client, "ACCOUNTS").post(f"{F}/depreciation-runs", json={
+            "unit_id": unit["unit_id"], "month": "2026-01-01", "books": "INCOME_TAX"})
+        assert done.status_code == 201, done.text
+        return done.json()
+
+    u = plant(make_client)
+    short = asset(make_client, u, date(2025, 12, 1), cost="100000", it_rate="30")  # 121 days
+    long_ = asset(make_client, u, date(2025, 6, 1), cost="100000", it_rate="30")  # 304 days
+    got = amounts(january_run(u))
+    assert got[short["asset_code"]] == tax_expected(100000, 30, 2, half_months=2)  # both months half
+    assert got[long_["asset_code"]] == tax_expected(100000, 30, 8)  # the full rate
+    off = plant(make_client)
+    again = asset(make_client, off, date(2025, 12, 1), cost="100000", it_rate="30")
+    with Rules(make_client, itHalfRateDays=0):  # the company does not apply the half-rate rule
+        full = amounts(january_run(off))
+    assert full[again["asset_code"]] == tax_expected(100000, 30, 2)
 
 
 def test_the_basis_is_frozen_once_depreciation_has_run_and_posting_needs_a_chart(

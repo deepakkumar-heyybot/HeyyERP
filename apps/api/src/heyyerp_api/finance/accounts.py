@@ -58,6 +58,7 @@ DEFAULT_CHART: list[tuple[str, str, str, str | None]] = [
     ("4000", "Sales", "INCOME", "SALES"),
     ("4100", "Scrap and asset sales", "INCOME", "SCRAP_SALES"),
     ("4200", "Inter-unit sales", "INCOME", "INTER_UNIT_SALES"),
+    ("4300", "Profit or loss on asset disposal", "INCOME", "ASSET_DISPOSAL_RESULT"),
     ("5000", "Cost of goods sold", "EXPENSE", "COST_OF_SALES"),
     ("5100", "Raw material consumed", "EXPENSE", "MATERIAL_CONSUMED"),
     ("5200", "Production variance", "EXPENSE", "PRODUCTION_VARIANCE"),
