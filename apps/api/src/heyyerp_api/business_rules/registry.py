@@ -79,6 +79,8 @@ SETTINGS: tuple[SettingDef, ...] = (
                options=("ON_DISPATCH", "ON_INVOICE")),
     SettingDef("productionPosting", "bool", True, "Book production to the accounts (raw material "
                "to work in progress to finished goods) in plants that have a chart", "DEFAULT"),
+    SettingDef("pmDueSoonDays", "int", 7, "Days before a preventive maintenance falls due that "
+               "it is flagged as due soon", "DEFAULT", minimum=0, maximum=90),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",
                minimum=1, maximum=365),
 )

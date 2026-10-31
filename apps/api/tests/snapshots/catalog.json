@@ -541,6 +541,11 @@
    "default": true,
    "rule": "DEFAULT"
   },
+  "pmDueSoonDays": {
+   "kind": "int",
+   "default": 7,
+   "rule": "DEFAULT"
+  },
   "msmePayDays": {
    "kind": "int",
    "default": 45,
@@ -549,6 +554,7 @@
  },
  "numbering_prefixes": {
   "batch": "BAT",
+  "breakdown": "BD",
   "challan": "CHL",
   "count": "CNT",
   "dispatch": "DSP",

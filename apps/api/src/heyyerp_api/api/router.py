@@ -20,6 +20,8 @@ from heyyerp_api.inventory.grn import router as grn_router
 from heyyerp_api.inventory.issues import router as issues_router
 from heyyerp_api.inventory.stock import router as stock_router
 from heyyerp_api.inventory.transfers import router as transfers_router
+from heyyerp_api.maintenance.breakdowns import router as breakdowns_router
+from heyyerp_api.maintenance.pm import router as pm_router
 from heyyerp_api.manufacturing.batches import router as batches_router
 from heyyerp_api.manufacturing.compounds import router as compounds_router
 from heyyerp_api.manufacturing.equipment import router as equipment_router
@@ -99,4 +101,6 @@ api_router.include_router(receivables_router)
 api_router.include_router(gst_router)
 api_router.include_router(costing_router)
 api_router.include_router(consolidation_router)
+api_router.include_router(pm_router)
+api_router.include_router(breakdowns_router)
 api_router.include_router(tds_router)
