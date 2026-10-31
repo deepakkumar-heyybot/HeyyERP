@@ -142,7 +142,7 @@ async def load(ctx: Ctx, bill_id: UUID) -> BillOut | None:
         {"id": bill_id})
     approval = await one(
         ctx, "SELECT approval_id FROM erp.approval_instance WHERE document_type = 'bill' AND "
-        "document_id = :id", {"id": bill_id})
+        "document_id = :id AND is_current", {"id": bill_id})
     return BillOut(**head, lines=[BillLineOut(**ln) for ln in lines],
                    approval_id=approval["approval_id"] if approval else None)
 

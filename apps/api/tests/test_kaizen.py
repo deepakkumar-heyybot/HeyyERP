@@ -145,3 +145,28 @@ def test_submission_needs_a_department_and_plant_and_respects_scope(make_client,
     assert Fresh(make_client, "SALES").get(f"{KZ}/{NOBODY}").status_code == 404
     assert Fresh(make_client, "PLANT_HEAD").post(f"{KZ}/{mine['kaizen_id']}/evaluate", json={
         "score": "-1", "verified_saving": "1"}).status_code == 422
+
+
+def test_a_rejected_kaizen_is_corrected_and_sent_again_with_the_first_round_kept(
+        make_client, api_database):
+    w = kaizen_world(make_client, api_database)
+    me = person(make_client, api_database, w)
+    first = me.post(KZ, json=idea()).json()
+    assert decide(make_client, first["approval_id"], "PROD", "REJECT").status_code == 200
+    assert me.get(f"{KZ}/{first['kaizen_id']}").json()["status"] == "REJECTED"
+    assert Fresh(make_client, "PLANT_HEAD").post(f"{KZ}/{first['kaizen_id']}/resubmit",
+                                                 json={}).status_code == 403
+    again = me.post(f"{KZ}/{first['kaizen_id']}/resubmit", json={
+        "proposed_change": "New vents and a harder compound", "estimated_saving": "90000"})
+    assert again.status_code == 200, again.text
+    second = again.json()
+    assert second["status"] == "SUBMITTED" and second["approval_id"] != first["approval_id"]
+    assert Decimal(second["estimated_saving"]) == 90000
+    assert me.post(f"{KZ}/{first['kaizen_id']}/resubmit", json={}).status_code == 409  # not rejected
+    assert decide(make_client, second["approval_id"], "PROD").status_code == 200
+    assert decide(make_client, second["approval_id"], "PLANT_HEAD").status_code == 200
+    assert me.get(f"{KZ}/{first['kaizen_id']}").json()["status"] == "APPROVED"
+    admin = Fresh(make_client, "ADMIN")
+    kept = [admin.get(f"/api/v1/approvals/{a}").json()["status"]
+            for a in (first["approval_id"], second["approval_id"])]
+    assert kept == ["REJECTED", "APPROVED"]  # both rounds are kept

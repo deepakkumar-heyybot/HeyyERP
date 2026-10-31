@@ -116,7 +116,7 @@ IND_SQL = (
     "n.requester_id, ru.display_name AS requester_name, n.indent_type, n.status, n.needed_by, "
     "n.created_at, a.approval_id FROM erp.indent n JOIN erp.unit un ON un.unit_id = n.unit_id "
     "JOIN erp.app_user ru ON ru.user_id = n.requester_id LEFT JOIN erp.approval_instance a "
-    "ON a.document_type = 'indent' AND a.document_id = n.indent_id"
+    "ON a.document_type = 'indent' AND a.document_id = n.indent_id AND a.is_current"
 )
 
 

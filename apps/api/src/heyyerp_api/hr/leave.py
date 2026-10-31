@@ -99,7 +99,8 @@ LEAVE_SQL = (
     "SELECT l.leave_request_id, l.employee_id, e.employee_no, e.full_name AS employee_name, "
     "l.leave_type_id, t.code AS leave_type_code, l.start_date, l.end_date, l.requested_days, "
     "l.half_day, l.reason, l.status, (SELECT a.approval_id FROM erp.approval_instance a WHERE "
-    "a.document_type = 'leave' AND a.document_id = l.leave_request_id) AS approval_id FROM "
+    "a.document_type = 'leave' AND a.document_id = l.leave_request_id AND a.is_current) "
+    "AS approval_id FROM "
     "erp.leave_request l JOIN erp.employee e ON e.employee_id = l.employee_id JOIN "
     "erp.leave_type t ON t.leave_type_id = l.leave_type_id"
 )

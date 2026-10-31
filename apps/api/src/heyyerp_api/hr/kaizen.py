@@ -122,7 +122,8 @@ class SavingOut(BaseModel):
 STATE = (
     "CASE WHEN k.status = 'SUBMITTED' AND COALESCE((SELECT i.current_step FROM "
     "erp.approval_instance i WHERE i.document_type = 'kaizen' AND i.document_id = k.kaizen_id "
-    "AND i.status = 'PENDING'), 1) > 1 THEN 'UNDER_EVALUATION' ELSE k.status END"
+    "AND i.is_current AND i.status = 'PENDING'), 1) > 1 THEN 'UNDER_EVALUATION' ELSE k.status "
+    "END"
 )
 KZ_SQL = (
     "SELECT k.kaizen_id, k.kaizen_no, k.unit_id, k.department_id, d.name AS department_name, "
@@ -131,7 +132,8 @@ KZ_SQL = (
     "k.verified_saving, k.score, k.evaluation_note, " + STATE + " AS status, k.submitted_at, "
     "k.approved_at, k.implemented_on, COALESCE((SELECT sum(s.amount) FROM erp.kaizen_saving s "
     "WHERE s.kaizen_id = k.kaizen_id), 0) AS realised_saving, (SELECT i.approval_id FROM "
-    "erp.approval_instance i WHERE i.document_type = 'kaizen' AND i.document_id = k.kaizen_id) "
+    "erp.approval_instance i WHERE i.document_type = 'kaizen' AND i.document_id = k.kaizen_id "
+    "AND i.is_current) "
     "AS approval_id FROM erp.kaizen k JOIN erp.department d ON d.department_id = "
     "k.department_id LEFT JOIN erp.app_user u ON u.user_id = k.submitter_id"
 )
@@ -162,7 +164,7 @@ async def untouched(ctx: Ctx, kaizen_id: UUID) -> bool:
     acted = await one(
         ctx, "SELECT 1 AS x FROM erp.approval_action a JOIN erp.approval_instance i ON "
         "i.approval_id = a.approval_id WHERE i.document_type = 'kaizen' AND i.document_id = :id "
-        "AND a.decision <> 'SKIP' LIMIT 1", {"id": kaizen_id})
+        "AND i.is_current AND a.decision <> 'SKIP' LIMIT 1", {"id": kaizen_id})
     return acted is None
 
 
@@ -251,6 +253,28 @@ async def cancel(kaizen_id: UUID, ctx: Ctx = Depends(submit_perm)) -> KaizenOut:
     await rows(ctx, "UPDATE erp.kaizen SET status = 'CANCELLED' WHERE kaizen_id = :id RETURNING "
                "kaizen_id", {"id": kaizen_id})
     await audit(ctx, "kaizen.cancel", "kaizen", kaizen_id, {})
+    return await load(ctx, kaizen_id)
+
+
+@router.post("/{kaizen_id}/resubmit", response_model=KaizenOut)
+async def resubmit(
+    kaizen_id: UUID, body: KaizenPatch, ctx: Ctx = Depends(submit_perm)
+) -> KaizenOut:
+    """Send a rejected kaizen for approval again, with corrections if the submitter makes any;
+    the earlier round stays in the approval history."""
+    row = await lock(ctx, kaizen_id)
+    if not is_owner(ctx, row):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the submitter resubmits a kaizen")
+    if row["status"] != "REJECTED":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only a rejected kaizen can be resubmitted")
+    changes = body.model_dump(exclude_unset=True)
+    sets = "".join(f", {k} = :{k}" for k in changes)
+    await rows(ctx, "UPDATE erp.kaizen SET status = 'SUBMITTED', score = NULL, verified_saving = "
+               f"NULL, evaluation_note = NULL{sets} WHERE kaizen_id = :id RETURNING kaizen_id",
+               {**changes, "id": kaizen_id})
+    approval_id = await engine.submit(ctx, "kaizen", kaizen_id)
+    await audit(ctx, "kaizen.resubmit", "kaizen", kaizen_id,
+                {"approval_id": approval_id, **changes})
     return await load(ctx, kaizen_id)
 
 

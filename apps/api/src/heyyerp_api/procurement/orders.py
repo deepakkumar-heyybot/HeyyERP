@@ -194,7 +194,8 @@ PO_SQL = (
     "cu.display_name AS created_by_name, p.created_at, a.approval_id FROM erp.purchase_order p "
     "JOIN erp.unit u ON u.unit_id = p.unit_id JOIN erp.vendor v ON v.vendor_id = p.vendor_id "
     "JOIN erp.app_user cu ON cu.user_id = p.created_by LEFT JOIN erp.rfq r ON r.rfq_id = p.rfq_id "
-    "LEFT JOIN erp.approval_instance a ON a.document_type = 'po' AND a.document_id = p.po_id"
+    "LEFT JOIN erp.approval_instance a ON a.document_type = 'po' AND a.document_id = p.po_id "
+    "AND a.is_current"
 )
 
 

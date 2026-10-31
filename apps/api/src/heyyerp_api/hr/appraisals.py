@@ -70,7 +70,8 @@ APP_SQL = (
     "SELECT a.appraisal_id, a.employee_id, e.employee_no, e.full_name AS employee_name, "
     "a.fiscal_year, a.status, a.self_score, a.self_comment, a.manager_score, a.manager_comment, "
     "a.hr_score, a.hr_comment, a.final_score, (SELECT i.approval_id FROM erp.approval_instance i "
-    "WHERE i.document_type = 'review' AND i.document_id = a.appraisal_id) AS approval_id FROM "
+    "WHERE i.document_type = 'review' AND i.document_id = a.appraisal_id AND i.is_current) "
+    "AS approval_id FROM "
     "erp.appraisal a JOIN erp.employee e ON e.employee_id = a.employee_id"
 )
 
@@ -192,6 +193,20 @@ async def hr_score(
                "= :id RETURNING appraisal_id", {"s": body.score, "c": body.comment,
                                                 "id": appraisal_id})
     await audit(ctx, "appraisal.hr_score", "appraisal", appraisal_id, {"score": body.score})
+    return await load(ctx, appraisal_id)
+
+
+@router.post("/appraisals/{appraisal_id}/reopen", response_model=AppraisalOut)
+async def reopen(appraisal_id: UUID, ctx: Ctx = Depends(manage)) -> AppraisalOut:
+    """HR sends a rejected appraisal back to the manager, who scores again and resubmits it."""
+    row = await employee_of(ctx, appraisal_id)
+    require_in_scope(ctx, row["unit_id"])
+    if row["status"] != "REJECTED":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only a rejected appraisal can be reopened")
+    await rows(ctx, "UPDATE erp.appraisal SET status = 'MANAGER_REVIEW', manager_score = NULL, "
+               "hr_score = NULL, final_score = NULL WHERE appraisal_id = :id RETURNING "
+               "appraisal_id", {"id": appraisal_id})
+    await audit(ctx, "appraisal.reopen", "appraisal", appraisal_id, {})
     return await load(ctx, appraisal_id)
 
 

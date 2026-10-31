@@ -64,7 +64,7 @@ SCRAP_SQL = (
     "SELECT s.scrap_sale_id, s.sale_no, s.unit_id, s.customer_id, c.code AS customer_code, "
     "s.description, s.quantity, s.amount, s.status, s.invoice_no, s.invoiced_at, "
     "(SELECT a.approval_id FROM erp.approval_instance a WHERE a.document_type = 'scrap' AND "
-    "a.document_id = s.scrap_sale_id ORDER BY a.submitted_at DESC LIMIT 1) AS approval_id FROM "
+    "a.document_id = s.scrap_sale_id AND a.is_current) AS approval_id FROM "
     "erp.scrap_sale s LEFT JOIN erp.customer c ON c.customer_id = s.customer_id"
 )
 

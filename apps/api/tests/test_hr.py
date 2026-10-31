@@ -381,3 +381,27 @@ def test_a_rejected_appraisal_ends_rejected_and_a_manager_less_employee_is_revie
                             ).status_code == 403  # nobody reviews their own
     by_hr = w["hr"].post(f"{HR}/appraisals/{top_id}/manager", json={"score": "4"})
     assert by_hr.status_code == 200 and by_hr.json()["status"] == "PENDING_APPROVAL"
+
+
+def test_a_rejected_appraisal_is_reopened_by_hr_and_goes_round_again(make_client, api_database):
+    w = hr_world(make_client, api_database)
+    boss_client, boss_uid = user_of(make_client, api_database, "PROD")
+    boss = employee(w, user_id=boss_uid)
+    me, uid = user_of(make_client, api_database, "SALES")
+    employee(w, user_id=uid, manager_id=boss["employee_id"])
+    w["hr"].post(f"{HR}/appraisals/open", json={"fiscal_year": date.today().year,
+                                                "unit_id": w["unit"]["unit_id"]})
+    aid = next(a for a in me.get(f"{HR}/appraisals").json()["items"])["appraisal_id"]
+    me.post(f"{HR}/appraisals/{aid}/self", json={"score": "3"})
+    first = boss_client.post(f"{HR}/appraisals/{aid}/manager", json={"score": "2"}).json()
+    assert decide(make_client, first["approval_id"], "PLANT_HEAD", "REJECT").status_code == 200
+    assert w["hr"].post(f"{HR}/appraisals/{aid}/reopen").status_code == 200
+    assert w["hr"].post(f"{HR}/appraisals/{aid}/reopen").status_code == 409  # no longer rejected
+    assert me.post(f"{HR}/appraisals/{aid}/reopen").status_code == 403
+    back = me.get(f"{HR}/appraisals/{aid}").json()
+    assert back["status"] == "MANAGER_REVIEW" and back["manager_score"] is None
+    second = boss_client.post(f"{HR}/appraisals/{aid}/manager", json={"score": "4"}).json()
+    assert second["status"] == "PENDING_APPROVAL" and second["approval_id"] != first["approval_id"]
+    assert decide(make_client, second["approval_id"], "PLANT_HEAD").status_code == 200
+    assert decide(make_client, second["approval_id"], "HR").status_code == 200
+    assert Decimal(me.get(f"{HR}/appraisals/{aid}").json()["final_score"]) == 4

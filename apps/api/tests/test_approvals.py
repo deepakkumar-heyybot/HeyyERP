@@ -156,7 +156,9 @@ def test_rejection_needs_a_note_and_finalises(make_client, docs):
     assert steps(rejected)[1] == ("PLANT_HEAD", "REJECTED")
     assert docs.finalized[doc] is False
     assert decide(plant_head, approval_id).status_code == 409  # Already decided
-    assert submit(make_client("PURCHASE"), doc).status_code == 409  # one approval per document
+    again = submit(make_client("PURCHASE"), doc)  # a rejected document may be sent again
+    assert again.status_code == 201 and again.json()["approval_id"] != approval_id
+    assert submit(make_client("PURCHASE"), doc).status_code == 409  # but not while it is pending
 
 
 def test_only_the_step_holder_may_decide_and_nobody_decides_their_own(make_client, docs):

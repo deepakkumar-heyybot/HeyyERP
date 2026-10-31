@@ -116,12 +116,14 @@ async def submit(ctx: Ctx, document_type: str, document_id: UUID) -> UUID:
         raise not_found("Document")
     if not info.submittable:
         raise HTTPException(status.HTTP_409_CONFLICT, info.reason or "Document cannot be submitted")
-    if await one(
-        ctx, "SELECT 1 AS x FROM erp.approval_instance WHERE document_type = :t "
-        "AND document_id = :id", {"t": document_type, "id": document_id},
-    ):
-        # ponytail: one approval per document; resubmission after a rejection needs a round number.
+    previous = await one(
+        ctx, "SELECT approval_id, status FROM erp.approval_instance WHERE document_type = :t "
+        "AND document_id = :id AND is_current FOR UPDATE", {"t": document_type, "id": document_id})
+    if previous is not None and previous["status"] in ("PENDING", "APPROVED"):
         raise HTTPException(status.HTTP_409_CONFLICT, "This document has already been submitted")
+    if previous is not None:  # rejected or withdrawn: that round stays as history
+        await one(ctx, "UPDATE erp.approval_instance SET is_current = false WHERE approval_id = "
+                  ":id RETURNING approval_id", {"id": previous["approval_id"]})
     rule = await find_rule(ctx, document_type, info.amount)
     if rule is None:
         raise HTTPException(
