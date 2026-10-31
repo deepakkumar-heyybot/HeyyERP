@@ -41,6 +41,9 @@ class RuleIn(Strict):
     amount_max: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     priority: int = Field(default=100, ge=1, le=10000)
     sla_hours: int = Field(ge=1, le=24 * 60)
+    # true: a step held by the requester's own role is skipped (BRD default); false: another
+    # person of that role must still approve it (nobody ever decides their own submission)
+    skip_requester_role: bool = True
     steps: list[StepIn] = Field(min_length=1, max_length=8)
 
     @model_validator(mode="after")
@@ -69,13 +72,14 @@ class RuleOut(BaseModel):
     priority: int
     version: int
     sla_hours: int | None
+    skip_requester_role: bool
     active: bool
     steps: list[StepOut]
 
 
 RULE_SQL = (
     "SELECT r.rule_id, r.name, r.document_type, r.amount_min, r.amount_max, r.priority, "
-    "r.version, s.hours AS sla_hours, "
+    "r.version, r.skip_requester_role, s.hours AS sla_hours, "
     "(r.active_from <= now() AND (r.active_to IS NULL OR r.active_to > now())) AS active "
     "FROM erp.approval_rule r LEFT JOIN erp.sla_policy s ON s.sla_policy_id = r.sla_policy_id"
 )
@@ -150,10 +154,12 @@ async def create_rule(body: RuleIn, ctx: Ctx = Depends(manage)) -> RuleOut:
         created = await one(
             ctx,
             "INSERT INTO erp.approval_rule(tenant_id, name, sla_policy_id, document_type, "
-            "amount_min, amount_max, priority) VALUES (erp.current_tenant_id(), :name, :sla, "
-            ":type, :min, :max, :priority) RETURNING rule_id",
+            "amount_min, amount_max, priority, skip_requester_role) VALUES "
+            "(erp.current_tenant_id(), :name, :sla, :type, :min, :max, :priority, :skip) "
+            "RETURNING rule_id",
             {"name": body.name, "sla": sla["sla_policy_id"], "type": body.document_type,
-             "min": body.amount_min, "max": body.amount_max, "priority": body.priority},
+             "min": body.amount_min, "max": body.amount_max, "priority": body.priority,
+             "skip": body.skip_requester_role},
         )
     assert created is not None
     await write_steps(ctx, created["rule_id"], body.steps)
@@ -181,10 +187,11 @@ async def replace_rule(rule_id: UUID, body: RuleIn, ctx: Ctx = Depends(manage)) 
         await rows(
             ctx,
             "UPDATE erp.approval_rule SET name = :name, document_type = :type, amount_min = :min, "
-            "amount_max = :max, priority = :priority, version = version + 1 "
-            "WHERE rule_id = :id RETURNING rule_id",
+            "amount_max = :max, priority = :priority, skip_requester_role = :skip, "
+            "version = version + 1 WHERE rule_id = :id RETURNING rule_id",
             {"name": body.name, "type": body.document_type, "min": body.amount_min,
-             "max": body.amount_max, "priority": body.priority, "id": rule_id},
+             "max": body.amount_max, "priority": body.priority, "skip": body.skip_requester_role,
+             "id": rule_id},
         )
     await write_steps(ctx, rule_id, body.steps)
     await audit(ctx, "approval_rule.update", "approval_rule", rule_id,

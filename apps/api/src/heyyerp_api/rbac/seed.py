@@ -73,10 +73,10 @@ def seed_default_rules(
         assert sla is not None
         created = conn.execute(
             "INSERT INTO erp.approval_rule(tenant_id, name, sla_policy_id, document_type, "
-            "amount_min, amount_max, priority) VALUES (%s, %s, %s, %s, %s, %s, %s) "
-            "RETURNING rule_id",
+            "amount_min, amount_max, priority, skip_requester_role) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s) RETURNING rule_id",
             (tenant_id, rule["name"], sla[0], rule["document_type"], rule.get("amount_min"),
-             rule.get("amount_max"), rule["priority"]),
+             rule.get("amount_max"), rule["priority"], rule.get("skip_requester_role", True)),
         ).fetchone()
         assert created is not None
         for sequence, step in enumerate(rule["steps"], start=1):

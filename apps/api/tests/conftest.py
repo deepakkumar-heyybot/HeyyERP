@@ -22,6 +22,8 @@ from .dbutil import ADMIN_URL, create_migrated_database, drop_database, url_for
 
 API_DB, API_ROLE, API_PASSWORD = "heyyerp_api_test", "heyyerp_api_test_app", "api-test-password"
 TENANT_A, TENANT_B = str(uuid4()), str(uuid4())
+# A throwaway key for tests only (32 bytes, base64); real keys are never kept in the repository.
+TEST_ENCRYPTION_KEY = "dGVzdC1vbmx5LWtleS1ub3QtZm9yLXJlYWwtZGF0YSE="
 
 AUTH_TABLES = """
 CREATE SCHEMA IF NOT EXISTS auth;
@@ -66,6 +68,7 @@ def make_client(
 ) -> Iterator[Callable[..., TestClient]]:
     """Build a client signed in as a user with the given ERP role (tenant A)."""
     monkeypatch.setenv("ORG_TENANT_MAP", json.dumps({"v-rub-suspensions": TENANT_A}))
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     get_settings.cache_clear()
     api_url = url_for(API_DB, API_ROLE, API_PASSWORD).replace(
         "postgresql://", "postgresql+asyncpg://"

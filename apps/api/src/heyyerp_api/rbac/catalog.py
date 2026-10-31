@@ -171,8 +171,10 @@ DEFAULT_RULES: list[dict[str, Any]] = [
      "sla_hours": 24, "steps": ["PURCHASE", "PLANT_HEAD"]},
     {"name": "R-PO-3", "document_type": "po", "priority": 30, "sla_hours": 24,
      "steps": ["PURCHASE", "PLANT_HEAD", "MD"]},
+    # A bill with match exceptions needs a second person: another Accounts user must approve it
+    # even when an Accounts user raised it (the requester never decides their own submission).
     {"name": "R-BILL", "document_type": "bill", "priority": 10, "sla_hours": 48,
-     "steps": ["ACCOUNTS"]},
+     "skip_requester_role": False, "steps": ["ACCOUNTS"]},
     {"name": "R-SCRAP", "document_type": "scrap", "priority": 10, "sla_hours": 48,
      "steps": ["PLANT_HEAD", "ACCOUNTS"]},
     {"name": "R-COUNT", "document_type": "count", "priority": 10, "sla_hours": 48,

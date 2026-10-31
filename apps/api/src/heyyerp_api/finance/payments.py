@@ -7,8 +7,8 @@ PROPOSED payment; paying it posts debit payable (vendor), credit bank and update
 become PARTIALLY_PAID or PAID. The bank file lists the run's payments with each vendor's account
 (payments of vendors without bank details are listed with a remark instead of being dropped). A
 payment is paid or cancelled, never edited. Needs fin.pay; reading needs the finance module.
-Account numbers are stored as entered for now; column encryption comes with security
-hardening.
+Account numbers are stored encrypted (AES-GCM, key DATA_ENCRYPTION_KEY) and shown masked;
+only the bank file decrypts them.
 """
 
 import csv
@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from heyyerp_api.crypto import decrypt, encrypt
 from heyyerp_api.finance.accounts import role_account
 from heyyerp_api.finance.autopost import finance_enabled
 from heyyerp_api.finance.journals import LineIn, post_entry
@@ -394,7 +395,8 @@ async def bank_file(run_id: UUID, ctx: Ctx = Depends(pay)) -> PlainTextResponse:
     clause, params = scope_clause(ctx, "p.unit_id")
     found = await rows(
         ctx, "SELECT p.payment_no, v.code AS vendor_code, v.name AS vendor_name, p.amount, "
-        "k.account_holder, k.account_no, k.ifsc, k.bank_name FROM erp.payment p JOIN erp.vendor "
+        "p.vendor_id, k.account_holder, k.account_no_enc, k.ifsc, k.bank_name FROM erp.payment p "
+        "JOIN erp.vendor "
         "v ON v.vendor_id = p.vendor_id LEFT JOIN erp.vendor_bank_account k ON k.vendor_id = "
         f"p.vendor_id WHERE p.run_id = :r AND p.status <> 'CANCELLED'"
         f"{' AND ' + clause if clause else ''} ORDER BY p.payment_no", {**params, "r": run_id})
@@ -405,9 +407,10 @@ async def bank_file(run_id: UUID, ctx: Ctx = Depends(pay)) -> PlainTextResponse:
     writer.writerow(["payment_no", "vendor_code", "vendor_name", "beneficiary", "account_no",
                      "ifsc", "bank", "amount", "remark"])
     for r in found:
-        missing = r["account_no"] is None
+        missing = r["account_no_enc"] is None
+        account_no = "" if missing else decrypt(r["account_no_enc"], str(r["vendor_id"]))
         writer.writerow([r["payment_no"], r["vendor_code"], r["vendor_name"],
-                         r["account_holder"] or "", r["account_no"] or "", r["ifsc"] or "",
+                         r["account_holder"] or "", account_no, r["ifsc"] or "",
                          r["bank_name"] or "", f"{r['amount']:.2f}",
                          "MISSING_BANK_DETAILS" if missing else ""])
     await audit(ctx, "payment_run.bank_file", "payment_run", run_id, {"rows": len(found)})
@@ -425,13 +428,15 @@ async def set_bank_account(vendor_id: UUID, body: BankIn, ctx: Ctx = Depends(pay
         raise not_found("Vendor")
     await rows(
         ctx, "INSERT INTO erp.vendor_bank_account(tenant_id, vendor_id, account_holder, "
-        "account_no, ifsc, bank_name, updated_by) VALUES (erp.current_tenant_id(), :v, :h, :n, "
-        ":i, :b, :me) ON CONFLICT (vendor_id) DO UPDATE SET account_holder = EXCLUDED."
-        "account_holder, account_no = EXCLUDED.account_no, ifsc = EXCLUDED.ifsc, bank_name = "
-        "EXCLUDED.bank_name, updated_by = EXCLUDED.updated_by, updated_at = now() "
-        "RETURNING vendor_id",
-        {"v": vendor_id, "h": body.account_holder, "n": body.account_no, "i": body.ifsc,
-         "b": body.bank_name, "me": ctx.principal.profile.app_user_id})
+        "account_no_enc, account_last4, ifsc, bank_name, updated_by) VALUES "
+        "(erp.current_tenant_id(), :v, :h, :n, :l, :i, :b, :me) ON CONFLICT (vendor_id) DO "
+        "UPDATE SET account_holder = EXCLUDED.account_holder, account_no_enc = "
+        "EXCLUDED.account_no_enc, account_last4 = EXCLUDED.account_last4, ifsc = "
+        "EXCLUDED.ifsc, bank_name = EXCLUDED.bank_name, updated_by = EXCLUDED.updated_by, "
+        "updated_at = now() RETURNING vendor_id",
+        {"v": vendor_id, "h": body.account_holder,
+         "n": encrypt(body.account_no, str(vendor_id)), "l": body.account_no[-4:],
+         "i": body.ifsc, "b": body.bank_name, "me": ctx.principal.profile.app_user_id})
     await audit(ctx, "vendor.bank_account", "vendor", vendor_id, {"ifsc": body.ifsc})
     return BankOut(vendor_id=vendor_id, account_holder=body.account_holder,
                    account_no_masked=mask(body.account_no), ifsc=body.ifsc,
@@ -440,10 +445,10 @@ async def set_bank_account(vendor_id: UUID, body: BankIn, ctx: Ctx = Depends(pay
 
 @router.get("/vendors/{vendor_id}/bank-account", response_model=BankOut)
 async def get_bank_account(vendor_id: UUID, ctx: Ctx = Depends(pay)) -> BankOut:
-    found = await one(ctx, "SELECT vendor_id, account_holder, account_no, ifsc, bank_name FROM "
+    found = await one(ctx, "SELECT vendor_id, account_holder, account_last4, ifsc, bank_name FROM "
                       "erp.vendor_bank_account WHERE vendor_id = :id", {"id": vendor_id})
     if found is None:
         raise not_found("Bank account")
     return BankOut(vendor_id=found["vendor_id"], account_holder=found["account_holder"],
-                   account_no_masked=mask(found["account_no"]), ifsc=found["ifsc"],
+                   account_no_masked="*" * 8 + found["account_last4"], ifsc=found["ifsc"],
                    bank_name=found["bank_name"])

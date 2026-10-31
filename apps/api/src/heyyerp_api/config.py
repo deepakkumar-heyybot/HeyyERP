@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # ORG_TENANT_MAP={"v-rub-suspensions":"<tenant uuid>"}.
     # ponytail: static map; move to a DB mapping once a second tenant onboards.
     org_tenant_map: dict[str, UUID] = Field(default_factory=dict)
+    # 32 random bytes, base64. Encrypts bank account numbers; the same key for everyone who shares
+    # a database. Without it the features that store such values answer 503.
+    data_encryption_key: str | None = None
 
 
 @lru_cache

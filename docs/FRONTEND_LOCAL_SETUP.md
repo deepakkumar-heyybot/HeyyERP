@@ -67,7 +67,8 @@ Three files are needed. They contain database credentials and an auth secret, so
 What the files contain (names only, the owner fills in the values):
 
 - `apps/api/.env`: `DATABASE_URL` (a limited login, `heyyerp_app`, that cannot bypass tenant security),
-  `AUTH_BASE_URL=http://localhost:3001`, `WEB_BASE_URL=http://localhost:5173`, `REQUIRED_ORG_SLUG`, `ORG_TENANT_MAP`.
+  `AUTH_BASE_URL=http://localhost:3001`, `WEB_BASE_URL=http://localhost:5173`, `REQUIRED_ORG_SLUG`, `ORG_TENANT_MAP`,
+  `DATA_ENCRYPTION_KEY` (encrypts bank account numbers; the same value for everyone who shares the database).
 - `apps/auth/.env`: `DATABASE_URL`, `BETTER_AUTH_SECRET` (the **same value for everyone** who shares the database),
   `AUTH_BASE_URL`, `WEB_BASE_URL`, `PORT=3001`, `NODE_ENV=development`,
   `AUTH_SKIP_EMAIL_VERIFICATION=true` (development only, no verification mail is needed), `V_RUB_ORG_ID`,

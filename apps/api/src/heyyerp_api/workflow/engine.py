@@ -36,7 +36,7 @@ def role_label(code: str) -> str:
 async def find_rule(ctx: Ctx, document_type: str, amount: Decimal | None) -> dict[str, Any] | None:
     return await one(
         ctx,
-        "SELECT r.rule_id, r.name, COALESCE(s.hours, 0) AS sla_hours "
+        "SELECT r.rule_id, r.name, r.skip_requester_role, COALESCE(s.hours, 0) AS sla_hours "
         "FROM erp.approval_rule r LEFT JOIN erp.sla_policy s ON s.sla_policy_id = r.sla_policy_id "
         "WHERE r.document_type = :type AND r.active_from <= now() "
         "AND (r.active_to IS NULL OR r.active_to > now()) AND ("
@@ -129,7 +129,9 @@ async def submit(ctx: Ctx, document_type: str, document_id: UUID) -> UUID:
         )
     route = await build_route(ctx, rule, info.department_id)
     me = ctx.principal.profile
-    for step in route:  # BRD: leading steps held by the requester's own role are skipped
+    for step in route:  # BRD: leading steps held by the requester's own role are skipped,
+        if not rule["skip_requester_role"]:  # unless the company turned that off for this rule
+            break
         if not holds_step(step, me.app_user_id, me.role):
             break
         step["skipped"] = True
