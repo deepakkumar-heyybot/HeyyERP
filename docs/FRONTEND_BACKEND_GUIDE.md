@@ -78,7 +78,7 @@ or a private message that you then delete). All `.env*` files are already git-ig
 
 | File | Goes to | Contains (names only) | Who has it |
 |---|---|---|---|
-| `apps/api/.env` | every backend runner | `DATABASE_URL` (the limited `heyyerp_app` login to the shared database), `AUTH_BASE_URL`, `WEB_BASE_URL`, `REQUIRED_ORG_SLUG`, `ORG_TENANT_MAP`, optional `APP_ENV`, `LOG_LEVEL` | the backend owner (Deepak): file `apps/api/.env.railway.team-api` |
+| `apps/api/.env` | every backend runner | `DATABASE_URL` (the limited `heyyerp_app` login to the shared database), `AUTH_BASE_URL`, `WEB_BASE_URL`, `REQUIRED_ORG_SLUG`, `ORG_TENANT_MAP`, `DATA_ENCRYPTION_KEY`, optional `APP_ENV`, `LOG_LEVEL` | the backend owner (Deepak): file `apps/api/.env.railway.team-api` |
 | `apps/auth/.env` | every backend runner | `DATABASE_URL` (owner login, needed for the auth tables), `BETTER_AUTH_SECRET`, `AUTH_BASE_URL`, `WEB_BASE_URL`, `PORT`, `NODE_ENV`, `AUTH_SKIP_EMAIL_VERIFICATION=true`, `V_RUB_ORG_ID`, `V_RUB_ORG_NAME`, `V_RUB_ORG_SLUG`, mail settings (leave empty for now) | the backend owner: file `apps/auth/.env` plus `apps/api/.env.railway.team-auth` for the database line |
 | `apps/web/.env` | the frontend developer | `VITE_AUTH_URL=http://localhost:3001`, `VITE_API_URL=http://localhost:8000` | nothing secret; copy from `apps/web/.env.example` |
 
@@ -88,6 +88,7 @@ What to know about them:
   protects each person's stored 2FA key, so a different secret locks other people's 2FA out.
 - `AUTH_SKIP_EMAIL_VERIFICATION=true` is a development switch: new accounts are verified without
   an e-mail (mail and DNS are not set up yet). It is refused when `NODE_ENV=production`.
+- `DATA_ENCRYPTION_KEY` encrypts vendor bank account numbers (AES-256). It must be **the same value for everyone** who shares the database. Without it the bank-account endpoints answer 503; nothing else is affected.
 - `ORG_TENANT_MAP` maps the organization slug `v-rub-suspensions` to the tenant id. The API
   refuses to start tenant work without it.
 - The shared database is a **development** database on Railway. It is not the production one.
@@ -228,6 +229,9 @@ counts, scrap sales, vendor onboarding. Screens: "Waiting for me", "All pending"
   rejection needs a note. Nobody decides their own submission. Send an `Idempotency-Key`.
 - The route (who approves, in what order, by value band) is data set by the admin; the frontend
   only displays `step_label`, `step_role`, `due_at` and `overdue`.
+- Each rule (`/admin/approval-rules`) has the option `skip_requester_role`. True (the default) skips a step
+  held by the requester's own role; false makes another person of that role approve it. Supplier-bill
+  exceptions (`R-BILL`) use false, so a second Accounts user must approve them.
 
 ### 8.4 Product engineering (`routes`, `manufacturing`)
 Items (`/product/items`), plant policies, specifications, customer part numbers, bills of
