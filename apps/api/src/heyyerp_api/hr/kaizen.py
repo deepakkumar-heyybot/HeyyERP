@@ -111,6 +111,8 @@ class KaizenOut(BaseModel):
     implemented_on: date | None
     realised_saving: Decimal
     approval_id: UUID | None
+    reward_amount: Decimal | None = None  # by the company's reward rules; none when it has none
+    reward_paid_on: date | None = None
 
 
 class SavingOut(BaseModel):
@@ -130,7 +132,8 @@ KZ_SQL = (
     "u.display_name AS submitter_name, k.title, k.category, k.problem_description, "
     "k.proposed_change, k.baseline_value, k.achieved_value, k.estimated_saving, "
     "k.verified_saving, k.score, k.evaluation_note, " + STATE + " AS status, k.submitted_at, "
-    "k.approved_at, k.implemented_on, COALESCE((SELECT sum(s.amount) FROM erp.kaizen_saving s "
+    "k.approved_at, k.implemented_on, k.reward_paid_on, COALESCE((SELECT sum(s.amount) FROM "
+    "erp.kaizen_saving s "
     "WHERE s.kaizen_id = k.kaizen_id), 0) AS realised_saving, (SELECT i.approval_id FROM "
     "erp.approval_instance i WHERE i.document_type = 'kaizen' AND i.document_id = k.kaizen_id "
     "AND i.is_current) "
@@ -139,11 +142,29 @@ KZ_SQL = (
 )
 
 
+async def reward_terms(ctx: Ctx) -> tuple[Decimal, Decimal | None]:
+    pct = Decimal(str(await rules.get_value(ctx, "kaizenRewardPct")))
+    cap = await rules.get_value(ctx, "kaizenRewardMax")
+    return pct, (Decimal(str(cap)) if cap is not None else None)
+
+
+def describe(row: dict[str, Any], pct: Decimal, cap: Decimal | None) -> KaizenOut:
+    """The kaizen with its reward: a share of the verified saving once approved, up to the
+    company's limit; nothing while the company has no reward scheme."""
+    reward = None
+    if pct > 0 and row["status"] in ("APPROVED", "IMPLEMENTED") and row[
+            "verified_saving"] is not None:
+        reward = (row["verified_saving"] * pct / 100).quantize(Decimal("0.01"))
+        if cap is not None:
+            reward = min(reward, cap)
+    return KaizenOut(**row, reward_amount=reward)
+
+
 async def load(ctx: Ctx, kaizen_id: UUID) -> KaizenOut:
     row = await one(ctx, f"{KZ_SQL} WHERE k.kaizen_id = :id", {"id": kaizen_id})
     if row is None or not ctx.principal.may_see_unit(row["unit_id"]):
         raise not_found("Kaizen")
-    return KaizenOut(**row)
+    return describe(row, *await reward_terms(ctx))
 
 
 async def lock(ctx: Ctx, kaizen_id: UUID) -> dict[str, Any]:
@@ -344,6 +365,29 @@ async def record_saving(
     return await savings(kaizen_id, ctx)
 
 
+class PaidIn(Strict):
+    paid_on: date
+
+
+@router.post("/{kaizen_id}/reward-paid", response_model=KaizenOut)
+async def reward_paid(kaizen_id: UUID, body: PaidIn, ctx: Ctx = Depends(manage)) -> KaizenOut:
+    """Record that the reward was handed over (the company's own payroll pays it)."""
+    await lock(ctx, kaizen_id)
+    current = await load(ctx, kaizen_id)
+    if not current.reward_amount:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This kaizen has no reward to pay")
+    if current.reward_paid_on is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The reward is already marked as paid")
+    if body.paid_on > date.today():
+        raise HTTPException(422, "The payment date is in the future")
+    await rows(ctx, "UPDATE erp.kaizen SET reward_paid_on = :d, reward_paid_by = :me WHERE "
+               "kaizen_id = :id RETURNING kaizen_id",
+               {"d": body.paid_on, "me": ctx.principal.profile.app_user_id, "id": kaizen_id})
+    await audit(ctx, "kaizen.reward_paid", "kaizen", kaizen_id,
+                {"paid_on": body.paid_on, "amount": current.reward_amount})
+    return await load(ctx, kaizen_id)
+
+
 @router.get("/{kaizen_id}/savings", response_model=list[SavingOut])
 async def savings(kaizen_id: UUID, ctx: Ctx = Depends(read)) -> list[SavingOut]:
     await load(ctx, kaizen_id)
@@ -379,7 +423,8 @@ async def list_kaizen(
     data = await rows(ctx, f"{KZ_SQL}{where} ORDER BY k.submitted_at DESC LIMIT :limit OFFSET "
                       ":offset", {**params, "limit": page.limit, "offset": page.offset})
     total = await count(ctx, f"SELECT count(*) FROM erp.kaizen k{where}", params)
-    return Page(items=[KaizenOut(**d) for d in data], total=total, limit=page.limit,
+    terms = await reward_terms(ctx)
+    return Page(items=[describe(d, *terms) for d in data], total=total, limit=page.limit,
                 offset=page.offset)
 
 

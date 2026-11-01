@@ -106,6 +106,23 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef("itHalfRateDays", "int", 180, "Income-tax book: an asset used for fewer than this "
                "many days in the year it was bought gets half the rate that year (0 switches "
                "the rule off)", "DEFAULT", minimum=0, maximum=366),
+    SettingDef("transferScheme", "enum", "SALE_AND_PURCHASE", "How an inter-plant transfer is "
+               "booked: as a sale by the sending plant (SALE_AND_PURCHASE) or as a plain "
+               "inventory transfer at cost (AT_COST)", "DEFAULT",
+               options=("SALE_AND_PURCHASE", "AT_COST")),
+    SettingDef("scrapGstRate", "decimal", "0.00", "GST rate (%) on scrap sales; 0 means no GST "
+               "is charged", "DEFAULT", minimum=0, maximum=28),
+    SettingDef("scrapAmountIncludesGst", "bool", False, "The amount of a scrap sale already "
+               "includes the GST (off: GST is added on top)", "DEFAULT"),
+    SettingDef("costMachineLabour", "bool", True, "Add machine time and labour (from the "
+               "machines' hourly rates and the shift entries) to the cost of finished goods",
+               "DEFAULT"),
+    SettingDef("kaizenRewardPct", "decimal", "0.00", "Reward for an approved kaizen, as % of its "
+               "verified saving; 0 means no reward scheme", "DEFAULT", minimum=0, maximum=100),
+    SettingDef("kaizenRewardMax", "decimal", None, "Most a single kaizen reward can be; empty "
+               "means no limit", "DEFAULT", nullable=True, minimum=0),
+    SettingDef("attachmentMaxKb", "int", 2048, "Largest file that can be attached to a record "
+               "(KB)", "DEFAULT", minimum=50, maximum=10240),
     SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
                "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",

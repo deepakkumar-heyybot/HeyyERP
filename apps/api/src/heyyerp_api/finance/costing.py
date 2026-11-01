@@ -48,6 +48,24 @@ async def lot_unit_cost(ctx: Ctx, prod_lot_id: UUID) -> Decimal:
     return (lot["material_cost"] / lot["started"]).quantize(SIX)  # type: ignore[no-any-return]
 
 
+SHIFT_MINUTES = 480  # the length of a shift entry (the same as in the shop floor module)
+
+
+async def machine_cost_per_piece(ctx: Ctx, work_order_id: UUID) -> Decimal:
+    """What the machines and crews cost per good piece reported on the order: for each shift
+    entry the running hours (a shift less its downtime) at the machine's hourly rate plus the
+    crew's hourly cost, spread over the good pieces of all the order's entries."""
+    row = await one(
+        ctx, "SELECT COALESCE(sum((:m - s.downtime_minutes) / 60.0 * (m.hourly_rate + "
+        "m.labour_per_hour)), 0) AS cost, COALESCE(sum(s.good_qty), 0) AS good FROM "
+        "erp.shift_production s JOIN erp.machine m ON m.machine_id = s.machine_id WHERE "
+        "s.work_order_id = :w", {"w": work_order_id, "m": SHIFT_MINUTES})
+    if row is None or row["good"] <= 0:
+        return ZERO
+    per_piece: Decimal = (Decimal(row["cost"]) / Decimal(row["good"])).quantize(SIX)
+    return per_piece
+
+
 async def finished_cost(
     ctx: Ctx, lot: dict[str, Any], packed: Decimal
 ) -> tuple[Decimal, Decimal, Decimal, Literal["ACTUAL", "STANDARD"]]:
@@ -55,6 +73,8 @@ async def finished_cost(
     material: Decimal = lot["material_cost"]
     pct = Decimal(str(await rules.get_value(ctx, "overheadPct")))
     conversion = money(material * pct / 100)
+    if await rules.get_value(ctx, "costMachineLabour"):
+        conversion += money(await machine_cost_per_piece(ctx, lot["work_order_id"]) * packed)
     actual = ((material + conversion) / packed).quantize(SIX)
     if await rules.get_value(ctx, "costMethod") == "STANDARD":
         item = await one(ctx, "SELECT standard_cost FROM erp.item WHERE item_id = :i",

@@ -73,6 +73,54 @@ async def book_stock(
                       narration=narration, amounts=amounts)
 
 
+async def inventory_by_role(ctx: Ctx, values: dict[UUID, Decimal]) -> dict[str, Decimal]:
+    """The values grouped by the inventory account of each item's type."""
+    kinds = {r["item_id"]: r["item_type"] for r in await rows(
+        ctx, "SELECT item_id, item_type FROM erp.item WHERE item_id = ANY(CAST(:ids AS uuid[]))",
+        {"ids": list(values)})}
+    by_role: dict[str, Decimal] = {}
+    for item_id, value in values.items():
+        role = INVENTORY_ROLE.get(kinds.get(item_id, "RM"), "INVENTORY_RM")
+        by_role[role] = by_role.get(role, Decimal(0)) + value
+    return by_role
+
+
+async def book_transfer(
+    ctx: Ctx, transfer_id: UUID, scheme: str, label: str
+) -> tuple[UUID | None, UUID | None]:
+    """Book a transfer between two plants at the cost that left, once, in both plants.
+
+    AT_COST: the sender debits inter-unit receivable and credits its inventory; the receiver debits
+    its inventory and credits inter-unit payable. SALE_AND_PURCHASE: the sender also books the sale
+    (credit inter-unit sales) and its cost (debit inter-unit purchases), so its profit is nil at
+    cost and the consolidation eliminates the pair. Returns the sender's and the receiver's
+    journal."""
+    head = await one(
+        ctx, "SELECT t.transfer_no, f.unit_id AS from_unit, d.unit_id AS to_unit FROM "
+        "erp.stock_transfer t JOIN erp.store f ON f.store_id = t.from_store_id JOIN erp.store d "
+        "ON d.store_id = t.to_store_id WHERE t.transfer_id = :id", {"id": transfer_id})
+    if head is None or head["from_unit"] == head["to_unit"]:
+        return None, None
+    values = {r["item_id"]: money(r["v"]) for r in await rows(
+        ctx, "SELECT item_id, sum(quantity * unit_cost) AS v FROM erp.stock_transfer_line WHERE "
+        "transfer_id = :id GROUP BY item_id", {"id": transfer_id})}
+    by_role = await inventory_by_role(ctx, values)
+    total = sum(by_role.values(), Decimal(0))
+    zero = Decimal(0)
+    narration = f"Inter-unit transfer {head['transfer_no']} ({label})"
+    out: list[tuple[str, Decimal, Decimal]] = [("INTER_UNIT_RECEIVABLE", total, zero)]
+    if scheme == "SALE_AND_PURCHASE":
+        out += [("INTER_UNIT_SALES", zero, total), ("INTER_UNIT_PURCHASES", total, zero)]
+    out += [(role, zero, v) for role, v in by_role.items()]
+    sent = await book(ctx, unit_id=head["from_unit"], source_type="TRANSFER_FROM",
+                      source_id=transfer_id, narration=narration, amounts=out)
+    got = await book(
+        ctx, unit_id=head["to_unit"], source_type="TRANSFER_TO", source_id=transfer_id,
+        narration=narration, amounts=[(role, v, zero) for role, v in by_role.items()]
+        + [("INTER_UNIT_PAYABLE", zero, total)])
+    return sent, got
+
+
 async def post_sales_invoice(ctx: Ctx, invoice_id: UUID) -> UUID | None:
     """Book a customer invoice: debit the customer, credit sales and GST output (once)."""
     inv: dict[str, Any] | None = await one(

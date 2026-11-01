@@ -4,6 +4,7 @@ Maintenance schedules and breakdowns come with Phase 11. Needs mfg.plan to chang
 the manufacturing module. Codes are unique per plant; records are deactivated, never deleted.
 """
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -38,12 +39,20 @@ class MachineIn(Strict):
     code: str = CODE
     name: str = Field(min_length=2, max_length=200)
     machine_type: str | None = Field(default=None, max_length=60)
+    hourly_rate: Decimal = Field(default=Decimal(0), ge=0, le=1_000_000, max_digits=18,
+                                 decimal_places=2)  # machine cost an hour, for costing
+    labour_per_hour: Decimal = Field(default=Decimal(0), ge=0, le=1_000_000, max_digits=18,
+                                     decimal_places=2)  # the crew's cost an hour
 
 
 class MachinePatch(Strict):
     name: str | None = Field(default=None, min_length=2, max_length=200)
     machine_type: str | None = Field(default=None, max_length=60)
     active: bool | None = None
+    hourly_rate: Decimal | None = Field(default=None, ge=0, le=1_000_000, max_digits=18,
+                                        decimal_places=2)
+    labour_per_hour: Decimal | None = Field(default=None, ge=0, le=1_000_000, max_digits=18,
+                                            decimal_places=2)
 
 
 class MachineOut(BaseModel):
@@ -53,6 +62,8 @@ class MachineOut(BaseModel):
     name: str
     machine_type: str | None
     active: bool
+    hourly_rate: Decimal
+    labour_per_hour: Decimal
 
 
 class MouldIn(Strict):
@@ -101,7 +112,8 @@ async def listing(
 
 
 # ------------------------------------------------------------------ machines
-MACHINE_COLS = "t.machine_id, t.unit_id, t.code, t.name, t.machine_type, t.active"
+MACHINE_COLS = ("t.machine_id, t.unit_id, t.code, t.name, t.machine_type, t.active, "
+                "t.hourly_rate, t.labour_per_hour")
 
 
 @router.get("/machines", response_model=Page[MachineOut])
@@ -135,10 +147,12 @@ async def create_machine(body: MachineIn, ctx: Ctx = Depends(manage)) -> Machine
     await active_unit(ctx, body.unit_id)
     with db_errors("This plant already has a machine with this code"):
         row = await one(
-            ctx, "INSERT INTO erp.machine(tenant_id, unit_id, code, name, machine_type) VALUES "
-            "(erp.current_tenant_id(), :u, :c, :n, :t) RETURNING machine_id, unit_id, code, "
-            "name, machine_type, active",
-            {"u": body.unit_id, "c": body.code.upper(), "n": body.name, "t": body.machine_type})
+            ctx, "INSERT INTO erp.machine(tenant_id, unit_id, code, name, machine_type, "
+            "hourly_rate, labour_per_hour) VALUES (erp.current_tenant_id(), :u, :c, :n, :t, "
+            ":h, :l) RETURNING machine_id, unit_id, code, name, machine_type, active, "
+            "hourly_rate, labour_per_hour",
+            {"u": body.unit_id, "c": body.code.upper(), "n": body.name, "t": body.machine_type,
+             "h": body.hourly_rate, "l": body.labour_per_hour})
     assert row is not None
     await audit(ctx, "machine.create", "machine", row["machine_id"], body.model_dump())
     return MachineOut(**row)
@@ -151,11 +165,14 @@ async def update_machine(
     current = await get_machine(machine_id, ctx)
     changes = body.model_dump(exclude_unset=True)
     merged = {**current.model_dump(), **changes}
-    if merged["name"] is None or merged["active"] is None:
+    if None in (merged["name"], merged["active"], merged["hourly_rate"],
+                merged["labour_per_hour"]):
         raise HTTPException(422, "Fields cannot be null")
     row = await one(
-        ctx, "UPDATE erp.machine SET name = :name, machine_type = :machine_type, active = :active "
-        "WHERE machine_id = :id RETURNING machine_id, unit_id, code, name, machine_type, active",
+        ctx, "UPDATE erp.machine SET name = :name, machine_type = :machine_type, active = :active, "
+        "hourly_rate = :hourly_rate, labour_per_hour = :labour_per_hour WHERE machine_id = :id "
+        "RETURNING machine_id, unit_id, code, name, machine_type, active, hourly_rate, "
+        "labour_per_hour",
         {**merged, "id": machine_id})
     assert row is not None
     await audit(ctx, "machine.update", "machine", machine_id, {"changes": changes})

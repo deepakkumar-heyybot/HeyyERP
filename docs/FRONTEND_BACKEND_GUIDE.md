@@ -8,7 +8,7 @@ single document a frontend developer needs to start building screens against the
 | | |
 |---|---|
 | Backend built | Phases 0 to 9: sign-in security, organization and master data, approvals, product engineering, procurement, inventory, manufacturing, quality, sales and dispatch |
-| Not built yet | Phase 10 finance and costing, Phase 11 maintenance / HR / kaizen, Phase 12 reports, integrations, AI (see section 11) |
+| Not built yet | Payroll and recruitment (BRD phase 2); Phase 12 reports, integrations, AI (see section 11) |
 | API size | 261 endpoints under `/api/v1`, all documented live at `<API URL>/api/v1/docs` (Swagger) |
 | Database | PostgreSQL, 16 migrations (`0001` to `0016`), row-level security on every tenant table |
 | Tests | 360 automated tests, all passing; regression guards fail if an endpoint or permission changes by accident |
@@ -325,6 +325,99 @@ inter-unit invoices. The shared database already has the sales tables (migration
 - **Inter-unit invoice**: for dispatched or received transfers between plants;
   `/sales/inter-unit-invoices/pending` lists transfers waiting for one.
 
+### 8.10 Finance (`finance`)
+Every plant has its own chart of accounts and its own books. Nothing posts for a plant until its chart
+exists: `POST /finance/accounts/seed-default` (adds only what is missing, so run it again after an
+update). Posting roles (BANK, RECEIVABLE, SALES, ...) map the standard accounts.
+- **Journals** (`/finance/journals`): DRAFT, POSTED, REVERSED. A posted journal is never edited; reverse
+  it. `trial-balance` and `accounts/{id}/ledger` read the books. Debit and credit must balance.
+- **Month lock** (`/finance/periods`): postings into a month past its lock date are refused (409,
+  "locked"). `periods/close` shuts a month, only an administrator reopens it.
+- **Supplier bills** (`/finance/bills`): entering a bill runs the 3-way match (quantity, rate, duplicate).
+  Status MATCHED, EXCEPTION (needs `submit` and approval), APPROVED, BOOKED, PARTIALLY_PAID, PAID,
+  REJECTED, CANCELLED. `book` posts it. Show `match_status` and the exception note per line.
+- **Payments**: `payment-proposals` (what is due, MSME first), `payment-runs` (creates PROPOSED
+  payments), `payments/{id}/pay`, `payment-runs/{id}/bank-file` (CSV). Vendor bank account numbers are
+  stored encrypted and shown masked (`********1234`).
+- **Receivables**: `receipts` (customer money, number RCT), `receipts/{id}/apply` to invoices,
+  `.../reverse`; `receivables/ageing`, `receivables/collections`, `customers/{id}/statement`. Every
+  invoice shows `paid_amount`, `outstanding` and `payment_status`.
+- **Consolidation** (`/finance/consolidation`): plants added together, inter-unit accounts eliminated;
+  a non-zero `receivable_payable_difference` means the two plants disagree.
+- **Costing**: `costing/standard/{item_id}` sets an item's standard cost; `costing/lots/{id}` is a
+  production lot's cost sheet (material, conversion, unit cost, basis ACTUAL or STANDARD).
+- **Fixed assets** (`/finance/assets`, `/finance/depreciation-runs`): register, `dispose`, and monthly
+  runs per book (COMPANIES_ACT is posted, INCOME_TAX is a schedule). A run is DRAFT until `post`; runs go
+  in month order.
+Many choices are company settings (section 8.16), not fixed: how finished goods are costed, when cost
+of sales is booked, how transfers between plants are booked, depreciation conventions.
+
+### 8.11 GST and TDS (`gst`, `finance`)
+- **GST returns** (`/gst/returns`): `POST` with `{unit_id, month, return_type}` builds GSTR1 or GSTR3B
+  data from the books (rebuilt each time until `.../file` marks it filed). `POST /gst/gstr2b/reconcile`
+  takes what suppliers reported and returns matched, differing, missing-in-books and missing-in-2B lines
+  with the credit at risk. Nothing is filed with the portal.
+- **TDS** (`/finance/tds`): deduct on a booked bill (section, rate overridable), `cancel`, `deposit`
+  with a challan number, and the month's `summary` by section.
+
+### 8.12 Maintenance (`maintenance`)
+- **PM plans** (`/maintenance/pm-plans`): by days for machines, by days or shots for moulds. The list is
+  the schedule: `pm_status` is OVERDUE, DUE_SOON (window is a company setting) or OK. `.../done`
+  records the work and restarts the interval; `.../history` lists it.
+- **Mould shots**: `POST /maintenance/moulds/{id}/shots`, or give `mould_id` and `shots` on a shift
+  entry. `moulds/{id}/life` shows the life used; `moulds-over-limit` lists worn moulds.
+- **Breakdowns** (`/maintenance/breakdowns`): anyone on the shop floor reports one (BD number); one open
+  ticket per machine; maintenance issues spares (`.../spares`, SPARE items only) and closes it with cause
+  and action. `/maintenance/reliability` gives MTTR and MTBF per machine.
+
+### 8.13 HR (`hr`)
+Employees are never deleted. A person's own record, leave and appraisal need only being signed in; HR
+screens need the `hr` module.
+- **Employees** (`/hr/employees`): plant, department, reporting line (cannot loop), link to the sign-in
+  user (`user_id`). `GET /hr/me` is the signed-in person's own record. `team` is everyone below.
+- **Leave**: `GET /hr/leave-types`, `GET /hr/leave-balances`, `POST /hr/leaves` (goes straight to the
+  department head's approval), `.../cancel` (withdraw a pending one or cancel an approved one that has
+  not started). Balances show `accrued_to_date`, `pending_days` and `available_days`. HR can apply on
+  someone's behalf and adjust balances. `GET /hr/leave-calendar` shows who is away.
+- **Calendar and shifts** (`/hr/holidays`, `/hr/shifts`): kept by HR; holidays can be added one by one or
+  in bulk; shifts have start, end and grace minutes.
+- **Attendance**: `POST /hr/attendance`, `POST /hr/attendance/import` (device records, safe to repeat),
+  `GET /hr/attendance/summary` (present, leave, absent, late and early-leaving days).
+- **Appraisals**: HR `open`s a year; the employee scores themselves (`/self`); the manager scores and
+  sends it for approval (`/manager`); HR may add its own score (`/hr-score`); a rejected one is reopened
+  by HR (`/reopen`).
+
+### 8.14 Kaizen (`kaizen`)
+Anyone submits (`POST /kaizen`); it goes to the department head, then the Plant Head. `status` is
+SUBMITTED, UNDER_EVALUATION (derived), APPROVED, IMPLEMENTED, REJECTED or CANCELLED. The submitter can
+edit or withdraw it until the first step is decided, and `resubmit` a rejected one. Evaluators give a
+score and a verified saving (`/evaluate`); approved ones are marked `/implemented` and the real saving is
+recorded per month (`/savings`). `reward_amount` appears only when the company has a reward scheme;
+`/reward-paid` records the payment. `GET /kaizen/summary/year` is the year's summary.
+
+### 8.15 Attachments (`/attachments`)
+Photos (PNG, JPEG, WebP) and PDFs for kaizen and breakdown records. Send JSON with `entity_type`,
+`entity_id`, `file_name`, `content_type` and `content_base64`; the size limit is a company setting and the
+content must match the type. List with `?entity_type=&entity_id=`; download from
+`/attachments/{id}/content`; `.../remove` switches a file off.
+
+### 8.16 Company settings (the admin changes these without a release)
+Read all with `GET /api/v1/settings`, change with `PUT /api/v1/admin/settings/{key}`. Screens should read
+these instead of assuming values. Recently added keys:
+
+| Key | What it decides |
+|---|---|
+| `costMethod`, `overheadPct`, `costMachineLabour` | How finished goods are costed (actual or standard, overhead percentage, machine and labour time) |
+| `cogsTiming`, `productionPosting` | When cost of sales is booked, and whether production is booked to the accounts |
+| `transferScheme`, `interUnit` | How transfers between plants are booked, and whether they get an invoice |
+| `scrapGstRate`, `scrapAmountIncludesGst` | GST on scrap sales |
+| `depreciationConvention`, `salvageMaxPct`, `depreciationLateBooking`, `itHalfRateDays` | Asset depreciation |
+| `pmDueSoonDays` | Days before a maintenance falls due that it shows as "due soon" |
+| `leaveYearStartMonth`, `leaveCountSundays`, `leaveHolidaysCount`, `leaveAccrual` | How leave is counted and earned |
+| `appraisalMaxScore`, `kaizenMaxScore` | Score scales |
+| `kaizenRewardPct`, `kaizenRewardMax` | Kaizen reward scheme (0 means none) |
+| `attachmentMaxKb` | Largest attachment |
+
 ## 9. Every endpoint
 
 Generated from the code (`python apps/api/scripts/endpoint_inventory.py`). "Needs" is the permission
@@ -357,6 +450,15 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | GET | `/api/v1/approvals/{approval_id}` | signed in |
 | POST | `/api/v1/approvals/{approval_id}/decide` | signed in |
 
+### attachments
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/attachments` | `kaizen.submit` |
+| POST | `/api/v1/attachments` | `kaizen.submit` |
+| GET | `/api/v1/attachments/{attachment_id}/content` | `kaizen.submit` |
+| POST | `/api/v1/attachments/{attachment_id}/remove` | `kaizen.submit` |
+
 ### business rules
 
 | Method | Path | Needs |
@@ -380,12 +482,131 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | PATCH | `/api/v1/parties/vendors/{vendor_id}` | `vendor.manage` |
 | POST | `/api/v1/parties/vendors/{vendor_id}/deactivate` | `vendor.manage` |
 
+### finance
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/finance/account-roles` | module `finance` |
+| PUT | `/api/v1/finance/account-roles` | `fin.voucher` |
+| GET | `/api/v1/finance/accounts` | module `finance` |
+| POST | `/api/v1/finance/accounts` | `fin.voucher` |
+| POST | `/api/v1/finance/accounts/seed-default` | `fin.voucher` |
+| GET | `/api/v1/finance/accounts/{account_id}` | module `finance` |
+| PATCH | `/api/v1/finance/accounts/{account_id}` | `fin.voucher` |
+| GET | `/api/v1/finance/accounts/{account_id}/ledger` | module `finance` |
+| GET | `/api/v1/finance/assets` | module `finance` |
+| POST | `/api/v1/finance/assets` | `asset.manage` |
+| GET | `/api/v1/finance/assets/{asset_id}` | module `finance` |
+| PATCH | `/api/v1/finance/assets/{asset_id}` | `asset.manage` |
+| POST | `/api/v1/finance/assets/{asset_id}/dispose` | `asset.manage` |
+| GET | `/api/v1/finance/bills` | module `finance` |
+| POST | `/api/v1/finance/bills` | `fin.bill` |
+| GET | `/api/v1/finance/bills/{bill_id}` | module `finance` |
+| POST | `/api/v1/finance/bills/{bill_id}/book` | `fin.bill` |
+| POST | `/api/v1/finance/bills/{bill_id}/cancel` | `fin.bill` |
+| POST | `/api/v1/finance/bills/{bill_id}/submit` | `fin.bill` |
+| GET | `/api/v1/finance/consolidation` | module `finance` |
+| GET | `/api/v1/finance/costing/lots/{prod_lot_id}` | module `finance` |
+| PUT | `/api/v1/finance/costing/standard/{item_id}` | `fin.voucher` |
+| GET | `/api/v1/finance/customers/{customer_id}/statement` | module `finance` |
+| GET | `/api/v1/finance/depreciation-runs` | module `finance` |
+| POST | `/api/v1/finance/depreciation-runs` | `asset.manage` |
+| GET | `/api/v1/finance/depreciation-runs/{run_id}` | module `finance` |
+| POST | `/api/v1/finance/depreciation-runs/{run_id}/cancel` | `asset.manage` |
+| POST | `/api/v1/finance/depreciation-runs/{run_id}/post` | `asset.manage` |
+| GET | `/api/v1/finance/journals` | module `finance` |
+| POST | `/api/v1/finance/journals` | `fin.voucher` |
+| DELETE | `/api/v1/finance/journals/{journal_id}` | `fin.voucher` |
+| GET | `/api/v1/finance/journals/{journal_id}` | module `finance` |
+| PUT | `/api/v1/finance/journals/{journal_id}` | `fin.voucher` |
+| POST | `/api/v1/finance/journals/{journal_id}/post` | `fin.voucher` |
+| POST | `/api/v1/finance/journals/{journal_id}/reverse` | `fin.voucher` |
+| GET | `/api/v1/finance/payment-proposals` | module `finance` |
+| POST | `/api/v1/finance/payment-runs` | `fin.pay` |
+| GET | `/api/v1/finance/payment-runs/{run_id}/bank-file` | `fin.pay` |
+| GET | `/api/v1/finance/payments` | module `finance` |
+| POST | `/api/v1/finance/payments` | `fin.pay` |
+| GET | `/api/v1/finance/payments/{payment_id}` | module `finance` |
+| POST | `/api/v1/finance/payments/{payment_id}/cancel` | `fin.pay` |
+| POST | `/api/v1/finance/payments/{payment_id}/pay` | `fin.pay` |
+| GET | `/api/v1/finance/periods` | module `finance` |
+| POST | `/api/v1/finance/periods/close` | `fin.voucher` |
+| POST | `/api/v1/finance/periods/reopen` | `admin` |
+| GET | `/api/v1/finance/receipts` | module `finance` |
+| POST | `/api/v1/finance/receipts` | `fin.voucher` |
+| GET | `/api/v1/finance/receipts/{payment_id}` | module `finance` |
+| POST | `/api/v1/finance/receipts/{payment_id}/apply` | `fin.voucher` |
+| POST | `/api/v1/finance/receipts/{payment_id}/reverse` | `fin.voucher` |
+| GET | `/api/v1/finance/receivables/ageing` | module `finance` |
+| GET | `/api/v1/finance/receivables/collections` | module `finance` |
+| GET | `/api/v1/finance/tds` | module `finance` |
+| POST | `/api/v1/finance/tds` | `fin.bill` |
+| POST | `/api/v1/finance/tds/deposit` | `fin.bill` |
+| GET | `/api/v1/finance/tds/summary` | module `finance` |
+| POST | `/api/v1/finance/tds/summary/prepare` | `fin.bill` |
+| POST | `/api/v1/finance/tds/{entry_id}/cancel` | `fin.bill` |
+| GET | `/api/v1/finance/trial-balance` | module `finance` |
+| GET | `/api/v1/finance/vendors/{vendor_id}/bank-account` | `fin.pay` |
+| PUT | `/api/v1/finance/vendors/{vendor_id}/bank-account` | `fin.pay` |
+
+### gst
+
+| Method | Path | Needs |
+|---|---|---|
+| POST | `/api/v1/gst/gstr2b/reconcile` | `gst` |
+| GET | `/api/v1/gst/returns` | module `gst` |
+| POST | `/api/v1/gst/returns` | `gst` |
+| GET | `/api/v1/gst/returns/{return_id}` | module `gst` |
+| POST | `/api/v1/gst/returns/{return_id}/file` | `gst` |
+
 ### health
 
 | Method | Path | Needs |
 |---|---|---|
 | GET | `/api/v1/health/live` | signed in |
 | GET | `/api/v1/health/ready` | signed in |
+
+### hr
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/hr/appraisals` | `leave.apply` |
+| POST | `/api/v1/hr/appraisals/open` | `hr.manage` |
+| GET | `/api/v1/hr/appraisals/{appraisal_id}` | `leave.apply` |
+| POST | `/api/v1/hr/appraisals/{appraisal_id}/hr-score` | `hr.manage` |
+| POST | `/api/v1/hr/appraisals/{appraisal_id}/manager` | `leave.apply` |
+| POST | `/api/v1/hr/appraisals/{appraisal_id}/reopen` | `hr.manage` |
+| POST | `/api/v1/hr/appraisals/{appraisal_id}/self` | `leave.apply` |
+| GET | `/api/v1/hr/attendance` | module `hr` |
+| POST | `/api/v1/hr/attendance` | `hr.manage` |
+| POST | `/api/v1/hr/attendance/import` | `hr.manage` |
+| GET | `/api/v1/hr/attendance/summary` | module `hr` |
+| GET | `/api/v1/hr/employees` | module `hr` |
+| POST | `/api/v1/hr/employees` | `hr.manage` |
+| GET | `/api/v1/hr/employees/{employee_id}` | module `hr` |
+| PATCH | `/api/v1/hr/employees/{employee_id}` | `hr.manage` |
+| POST | `/api/v1/hr/employees/{employee_id}/exit` | `hr.manage` |
+| POST | `/api/v1/hr/employees/{employee_id}/reinstate` | `hr.manage` |
+| GET | `/api/v1/hr/employees/{employee_id}/team` | `leave.apply` |
+| GET | `/api/v1/hr/holidays` | `leave.apply` |
+| POST | `/api/v1/hr/holidays` | `hr.manage` |
+| POST | `/api/v1/hr/holidays/bulk` | `hr.manage` |
+| PATCH | `/api/v1/hr/holidays/{holiday_id}` | `hr.manage` |
+| GET | `/api/v1/hr/leave-balances` | `leave.apply` |
+| POST | `/api/v1/hr/leave-balances/adjust` | `hr.manage` |
+| GET | `/api/v1/hr/leave-calendar` | module `hr` |
+| GET | `/api/v1/hr/leave-types` | `leave.apply` |
+| POST | `/api/v1/hr/leave-types` | `hr.manage` |
+| POST | `/api/v1/hr/leave-types/seed-default` | `hr.manage` |
+| PATCH | `/api/v1/hr/leave-types/{leave_type_id}` | `hr.manage` |
+| GET | `/api/v1/hr/leaves` | `leave.apply` |
+| POST | `/api/v1/hr/leaves` | `leave.apply` |
+| GET | `/api/v1/hr/leaves/{request_id}` | `leave.apply` |
+| POST | `/api/v1/hr/leaves/{request_id}/cancel` | `leave.apply` |
+| GET | `/api/v1/hr/me` | `leave.apply` |
+| GET | `/api/v1/hr/shifts` | `leave.apply` |
+| POST | `/api/v1/hr/shifts` | `hr.manage` |
+| PATCH | `/api/v1/hr/shifts/{shift_id}` | `hr.manage` |
 
 ### inventory
 
@@ -425,6 +646,43 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | POST | `/api/v1/inventory/transfers/{transfer_id}/dispatch` | `inv.transfer` |
 | POST | `/api/v1/inventory/transfers/{transfer_id}/receive` | `inv.transfer` |
 | GET | `/api/v1/inventory/valuation` | module `inventory` |
+
+### kaizen
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/kaizen` | module `kaizen` |
+| POST | `/api/v1/kaizen` | `kaizen.submit` |
+| GET | `/api/v1/kaizen/summary/year` | module `kaizen` |
+| GET | `/api/v1/kaizen/{kaizen_id}` | module `kaizen` |
+| PATCH | `/api/v1/kaizen/{kaizen_id}` | `kaizen.submit` |
+| POST | `/api/v1/kaizen/{kaizen_id}/cancel` | `kaizen.submit` |
+| POST | `/api/v1/kaizen/{kaizen_id}/evaluate` | `kaizen.manage` |
+| POST | `/api/v1/kaizen/{kaizen_id}/implemented` | `kaizen.submit` |
+| POST | `/api/v1/kaizen/{kaizen_id}/resubmit` | `kaizen.submit` |
+| POST | `/api/v1/kaizen/{kaizen_id}/reward-paid` | `kaizen.manage` |
+| GET | `/api/v1/kaizen/{kaizen_id}/savings` | module `kaizen` |
+| POST | `/api/v1/kaizen/{kaizen_id}/savings` | `kaizen.manage` |
+
+### maintenance
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/maintenance/breakdowns` | module `maintenance` |
+| POST | `/api/v1/maintenance/breakdowns` | `mnt.breakdown` |
+| GET | `/api/v1/maintenance/breakdowns/{breakdown_id}` | module `maintenance` |
+| POST | `/api/v1/maintenance/breakdowns/{breakdown_id}/close` | `mnt` |
+| POST | `/api/v1/maintenance/breakdowns/{breakdown_id}/spares` | `mnt` |
+| GET | `/api/v1/maintenance/moulds-over-limit` | module `maintenance` |
+| GET | `/api/v1/maintenance/moulds/{mould_id}/life` | module `maintenance` |
+| POST | `/api/v1/maintenance/moulds/{mould_id}/shots` | `mfg.entry` |
+| GET | `/api/v1/maintenance/pm-plans` | module `maintenance` |
+| POST | `/api/v1/maintenance/pm-plans` | `mnt` |
+| GET | `/api/v1/maintenance/pm-plans/{plan_id}` | module `maintenance` |
+| PATCH | `/api/v1/maintenance/pm-plans/{plan_id}` | `mnt` |
+| POST | `/api/v1/maintenance/pm-plans/{plan_id}/done` | `mnt` |
+| GET | `/api/v1/maintenance/pm-plans/{plan_id}/history` | module `maintenance` |
+| GET | `/api/v1/maintenance/reliability` | module `maintenance` |
 
 ### manufacturing
 
@@ -670,22 +928,22 @@ or module the caller must have; "signed in" means any signed-in person with an E
 5. Manufacturing: batches, work orders, production lots (the stage board), shop-floor entry.
 6. Quality: QA queue, inspections, holds, NCR.
 7. Sales: orders, schedule import, dispatch, invoices, challans.
+8. Finance: chart and journals, supplier bills and payments, receipts and ageing, GST and TDS.
+9. Maintenance and HR (self-service leave first), kaizen, company settings.
 
 For each screen: list endpoint, detail endpoint, the action buttons by status, and the refusal
 messages.
 
 ## 11. Not built yet (do not build screens for these)
 
-- **Finance and costing (Phase 10)**: chart of accounts, journals, supplier bills with 3-way match,
-  payments, receivables ageing, GST and TDS returns, production costing. Finished goods currently
-  enter stock at zero cost.
-- **Maintenance, HR and kaizen (Phase 11)**: PM schedules, breakdowns, assets, leave, payroll, kaizen.
+- **Payroll and recruitment**: BRD phase 2.
 - **Reports, integrations and AI (Phase 12)**: report library with Excel and PDF export, e-invoice and
-  e-way bill through a GST provider, WhatsApp and e-mail notifications, file uploads, the AI
-  copilot and OCR agents, a real-time gateway.
+  e-way bill through a GST provider, WhatsApp and e-mail notifications, the AI copilot and OCR agents,
+  a real-time gateway. (File attachments exist for kaizen and breakdowns only.)
+- **GST filing**: the GST screens prepare data; nothing is filed with the portal.
 - Smaller gaps: sign-in and sign-out audit rows, editable roles, approval delegation, bulk approve,
   shop-floor PIN or OTP sign-in, barcode and label printing, customer portal, vendor rating, cash
-  purchase, PO amendment after approval.
+  purchase, PO amendment after approval, a shift master for production shifts A, B and C.
 
 ## 12. Quick checks
 

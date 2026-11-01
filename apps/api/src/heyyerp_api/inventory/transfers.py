@@ -15,6 +15,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.business_rules import service as rules
+from heyyerp_api.finance.autopost import book_transfer
 from heyyerp_api.inventory import ledger
 from heyyerp_api.masters.common import (
     Ctx,
@@ -237,6 +239,8 @@ async def dispatch_transfer(transfer_id: UUID, ctx: Ctx = Depends(write)) -> Tra
             "RETURNING transfer_line_id",
             {"c": (cost / line["quantity"]).quantize(Decimal("0.000001")),
              "id": line["transfer_line_id"]})
+    if not await rules.get_value(ctx, "interUnit"):  # no invoice will follow: book it now
+        await book_transfer(ctx, transfer_id, "AT_COST", "no invoice")
     await rows(ctx, "UPDATE erp.stock_transfer SET status = 'DISPATCHED', dispatched_at = now() "
                "WHERE transfer_id = :id RETURNING transfer_id", {"id": transfer_id})
     await audit(ctx, "transfer.dispatch", "transfer", transfer_id,

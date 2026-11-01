@@ -14,9 +14,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from heyyerp_api.business_rules import service as rules
 from heyyerp_api.finance.accounts import role_account
 from heyyerp_api.finance.autopost import finance_enabled
 from heyyerp_api.finance.journals import LineIn, post_entry
+from heyyerp_api.inventory.ledger import money
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
@@ -57,6 +59,8 @@ class ScrapOut(BaseModel):
     description: str
     quantity: Decimal
     amount: Decimal
+    taxable_amount: Decimal  # worked out when invoiced, by the company's GST rules
+    tax_amount: Decimal
     status: str
     invoice_no: str | None
     invoiced_at: datetime | None
@@ -65,7 +69,8 @@ class ScrapOut(BaseModel):
 
 SCRAP_SQL = (
     "SELECT s.scrap_sale_id, s.sale_no, s.unit_id, s.customer_id, c.code AS customer_code, "
-    "s.description, s.quantity, s.amount, s.status, s.invoice_no, s.invoiced_at, "
+    "s.description, s.quantity, s.amount, s.taxable_amount, s.tax_amount, s.status, "
+    "s.invoice_no, s.invoiced_at, "
     "(SELECT a.approval_id FROM erp.approval_instance a WHERE a.document_type = 'scrap' AND "
     "a.document_id = s.scrap_sale_id AND a.is_current) AS approval_id FROM "
     "erp.scrap_sale s LEFT JOIN erp.customer c ON c.customer_id = s.customer_id"
@@ -151,21 +156,33 @@ async def invoice_scrap_sale(scrap_id: UUID, ctx: Ctx = Depends(manage)) -> Scra
     """Only an approved scrap sale can be invoiced, and only once."""
     head = await require_scrap(ctx, scrap_id, "APPROVED")
     number = await next_number(ctx, "invoice")
+    rate = Decimal(str(await rules.get_value(ctx, "scrapGstRate")))
+    amount: Decimal = head["amount"]
+    if rate == 0:
+        taxable, tax = amount, Decimal(0)
+    elif await rules.get_value(ctx, "scrapAmountIncludesGst"):
+        taxable = money(amount / (1 + rate / 100))
+        tax = amount - taxable
+    else:
+        taxable, tax = amount, money(amount * rate / 100)
     await rows(ctx, "UPDATE erp.scrap_sale SET status = 'INVOICED', invoice_no = :n, invoiced_at "
-               "= now() WHERE scrap_sale_id = :id RETURNING scrap_sale_id",
-               {"n": number, "id": scrap_id})
+               "= now(), taxable_amount = :t, tax_amount = :x WHERE scrap_sale_id = :id "
+               "RETURNING scrap_sale_id", {"n": number, "t": taxable, "x": tax, "id": scrap_id})
     if await finance_enabled(ctx, head["unit_id"]):  # a customer owes it, a cash sale is banked
         owed = head["customer_id"] is not None
         await post_entry(
             ctx, unit_id=head["unit_id"], journal_date=date.today(), source_type="SCRAP_SALE",
             source_id=scrap_id, narration=f"Scrap sale {head['sale_no']} invoice {number}",
             lines=[LineIn(account_id=await role_account(
-                ctx, head["unit_id"], "RECEIVABLE" if owed else "BANK"), debit=head["amount"],
+                ctx, head["unit_id"], "RECEIVABLE" if owed else "BANK"), debit=taxable + tax,
                 party_type="CUSTOMER" if owed else None, party_id=head["customer_id"]),
                 LineIn(account_id=await role_account(ctx, head["unit_id"], "SCRAP_SALES"),
-                       credit=head["amount"])])
+                       credit=taxable),
+                *([LineIn(account_id=await role_account(ctx, head["unit_id"], "GST_OUTPUT"),
+                          credit=tax)] if tax > 0 else [])])
     await audit(ctx, "scrap.invoice", "scrap_sale", scrap_id,
-                {"sale_no": head["sale_no"], "invoice_no": number, "amount": head["amount"]})
+                {"sale_no": head["sale_no"], "invoice_no": number, "amount": head["amount"],
+                 "taxable": taxable, "tax": tax})
     result = await load(ctx, scrap_id)
     assert result is not None
     return result

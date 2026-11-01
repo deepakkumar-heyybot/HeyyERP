@@ -591,6 +591,41 @@
    "default": 180,
    "rule": "DEFAULT"
   },
+  "transferScheme": {
+   "kind": "enum",
+   "default": "SALE_AND_PURCHASE",
+   "rule": "DEFAULT"
+  },
+  "scrapGstRate": {
+   "kind": "decimal",
+   "default": "0.00",
+   "rule": "DEFAULT"
+  },
+  "scrapAmountIncludesGst": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "costMachineLabour": {
+   "kind": "bool",
+   "default": true,
+   "rule": "DEFAULT"
+  },
+  "kaizenRewardPct": {
+   "kind": "decimal",
+   "default": "0.00",
+   "rule": "DEFAULT"
+  },
+  "kaizenRewardMax": {
+   "kind": "decimal",
+   "default": null,
+   "rule": "DEFAULT"
+  },
+  "attachmentMaxKb": {
+   "kind": "int",
+   "default": 2048,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,

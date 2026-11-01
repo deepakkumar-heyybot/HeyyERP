@@ -112,6 +112,15 @@ async def gstr1(ctx: Ctx, unit_id: UUID, first: date, after: date) -> dict[str, 
         "JOIN erp.customer c ON c.customer_id = v.customer_id WHERE v.unit_id = :u AND "
         "v.issue_date >= :a AND v.issue_date < :b ORDER BY v.invoice_no",
         {"u": unit_id, "a": first, "b": after})
+    scrap = await rows(
+        ctx, "SELECT s.invoice_no, s.invoiced_at::date AS issue_date, 'ISSUED' AS status, "
+        "CASE WHEN s.taxable_amount > 0 THEN s.taxable_amount ELSE s.amount END AS "
+        "taxable_amount, s.tax_amount, c.code AS customer_code, COALESCE(c.name, 'Cash sale') "
+        "AS customer_name, c.gstin FROM erp.scrap_sale s LEFT JOIN erp.customer c ON "
+        "c.customer_id = s.customer_id WHERE s.unit_id = :u AND s.status = 'INVOICED' AND "
+        "s.invoiced_at >= :a AND s.invoiced_at < :b ORDER BY s.invoice_no",
+        {"u": unit_id, "a": first, "b": after})  # scrap sales are outward supplies too
+    data = data + scrap
     b2b: list[dict[str, Any]] = []
     b2c: list[dict[str, Any]] = []
     cancelled: list[str] = []
