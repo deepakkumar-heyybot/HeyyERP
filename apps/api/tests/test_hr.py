@@ -272,8 +272,7 @@ def test_who_may_apply_see_and_adjust_leave(make_client, api_database):
 def test_attendance_is_imported_safely_and_summarised_for_the_month(make_client, api_database):
     w = hr_world(make_client, api_database)
     person = employee(w, employee_no="ATT" + code()[:4])
-    today = date.today()
-    month = today.replace(day=1)
+    month = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)  # a finished month
     day1 = month + timedelta(days=1)
     stamp = datetime(day1.year, day1.month, day1.day, 3, 30, tzinfo=UTC)  # 09:00 in India
     rows = [{"employee_no": person["employee_no"], "check_in": stamp.isoformat(),
