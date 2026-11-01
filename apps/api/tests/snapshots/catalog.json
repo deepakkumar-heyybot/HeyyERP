@@ -641,6 +641,21 @@
    "default": 5,
    "rule": "DEFAULT"
   },
+  "eInvoice": {
+   "kind": "enum",
+   "default": "OFF",
+   "rule": "DEFAULT"
+  },
+  "ewbThreshold": {
+   "kind": "decimal",
+   "default": "50000.00",
+   "rule": "DEFAULT"
+  },
+  "gspMaxAttempts": {
+   "kind": "int",
+   "default": 5,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,

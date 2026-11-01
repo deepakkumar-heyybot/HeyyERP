@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str | None = None
     whatsapp_template: str = "heyyerp_alert"  # an approved template with two text variables
     whatsapp_template_language: str = "en"
+    # GST service provider (e-invoice and e-way bill). "mock" makes test numbers and is refused in
+    # production; "http" posts the standard e-invoice JSON to the provider's own URLs.
+    gsp_provider: str = "mock"
+    gsp_base_url: str | None = None
+    gsp_irn_path: str = "/einvoice/generate"
+    gsp_irn_cancel_path: str = "/einvoice/cancel"
+    gsp_ewb_path: str = "/ewaybill/generate"
+    gsp_token: str | None = None
     background_worker: bool = False  # run the notification and SLA jobs inside this process
     worker_interval_seconds: int = Field(default=60, ge=5, le=3600)
 

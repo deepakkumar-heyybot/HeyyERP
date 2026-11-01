@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from heyyerp_api.business_rules import service as rules
 from heyyerp_api.finance.autopost import book, post_sales_invoice
 from heyyerp_api.finance.journals import ReverseIn, reverse_journal
+from heyyerp_api.gsp import service as gsp_service
 from heyyerp_api.masters.common import (
     Ctx,
     Page,
@@ -176,6 +177,10 @@ async def invoice_dispatch(dispatch_id: UUID, ctx: Ctx = Depends(manage)) -> Inv
             await rows(ctx, "UPDATE erp.customer_invoice SET cogs_journal_id = :j WHERE "
                        "invoice_id = :id RETURNING invoice_id",
                        {"j": cogs, "id": created["invoice_id"]})
+    if await rules.get_value(ctx, "eInvoice") == "AUTO" and await one(
+            ctx, "SELECT 1 AS x FROM erp.customer WHERE customer_id = :c AND gstin IS NOT NULL",
+            {"c": order["customer_id"]}):
+        await gsp_service.enqueue(ctx, gsp_service.IRN_GENERATE, created["invoice_id"])
     warnings = await orders.credit_warnings(ctx, order["customer_id"], Decimal(0))
     await audit(ctx, "invoice.create", "invoice", created["invoice_id"],
                 {"invoice_no": number, "dispatch_no": head["dispatch_no"],
@@ -224,8 +229,8 @@ async def get_invoice(invoice_id: UUID, ctx: Ctx = Depends(read)) -> InvoiceOut:
 async def require_invoice(ctx: Ctx, invoice_id: UUID) -> dict[str, Any]:
     clause, params = scope_clause(ctx, "unit_id")
     head = await one(
-        ctx, "SELECT invoice_id, invoice_no, status, irn, ewb_no, unit_id, paid_amount, "
-        "journal_id, cogs_journal_id FROM "
+        ctx, "SELECT invoice_id, invoice_no, status, irn, irn_status, ewb_no, unit_id, "
+        "paid_amount, journal_id, cogs_journal_id FROM "
         f"erp.customer_invoice WHERE invoice_id = :id{' AND ' + clause if clause else ''} "
         "FOR UPDATE", {**params, "id": invoice_id})
     if head is None:
@@ -240,10 +245,11 @@ async def require_invoice(ctx: Ctx, invoice_id: UUID) -> dict[str, Any]:
 async def cancel_invoice(invoice_id: UUID, ctx: Ctx = Depends(manage)) -> InvoiceOut:
     """Cancel an invoice with no e-invoice or e-way bill yet; the dispatch can be re-invoiced."""
     head = await require_invoice(ctx, invoice_id)
-    if head["irn"] or head["ewb_no"]:
+    if (head["irn"] and head["irn_status"] != "CANCELLED") or head["ewb_no"]:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "An e-invoice or e-way bill is recorded; cancel it with the GST portal first")
+            "An e-invoice or e-way bill is recorded; cancel it with the GST portal first "
+            "(or with the e-invoice cancel here, if it was raised here)")
     if head["paid_amount"] > 0:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "Receipts are applied to this invoice; reverse them first")
@@ -277,8 +283,9 @@ async def record_gst_reference(
                             "That reference is already recorded and cannot be changed")
     await rows(
         ctx, "UPDATE erp.customer_invoice SET irn = COALESCE(irn, :irn), irn_ack_no = "
-        "COALESCE(:ack, irn_ack_no), ewb_no = COALESCE(ewb_no, :ewb) WHERE invoice_id = :id "
-        "RETURNING invoice_id",
+        "COALESCE(:ack, irn_ack_no), ewb_no = COALESCE(ewb_no, :ewb), irn_status = CASE WHEN "
+        "COALESCE(irn, :irn) IS NOT NULL THEN 'GENERATED' ELSE irn_status END WHERE "
+        "invoice_id = :id RETURNING invoice_id",
         {"irn": body.irn, "ack": body.irn_ack_no, "ewb": body.ewb_no, "id": invoice_id})
     await audit(ctx, "invoice.gst_reference", "invoice", invoice_id,
                 {"invoice_no": head["invoice_no"], "irn": bool(body.irn),

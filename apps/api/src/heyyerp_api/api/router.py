@@ -16,6 +16,7 @@ from heyyerp_api.finance.payments import router as payments_router
 from heyyerp_api.finance.period import router as periods_router
 from heyyerp_api.finance.receivables import router as receivables_router
 from heyyerp_api.finance.tds import router as tds_router
+from heyyerp_api.gsp.api import router as gsp_router
 from heyyerp_api.hr.appraisals import router as appraisals_router
 from heyyerp_api.hr.attachments import router as attachments_router
 from heyyerp_api.hr.attendance import router as attendance_router
@@ -123,4 +124,5 @@ api_router.include_router(calendar_router)
 api_router.include_router(attachments_router)
 api_router.include_router(reports_router)
 api_router.include_router(notifications_router)
+api_router.include_router(gsp_router)
 api_router.include_router(tds_router)

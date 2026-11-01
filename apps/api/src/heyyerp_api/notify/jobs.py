@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from heyyerp_api import db
 from heyyerp_api.business_rules import service as rules
 from heyyerp_api.config import get_settings
+from heyyerp_api.gsp import service as gsp_service
 from heyyerp_api.masters.common import Ctx, one, rows
 from heyyerp_api.notify.queue import approval_data_for, queue
 from heyyerp_api.notify.senders import sender_for, whatsapp_number
@@ -133,6 +134,7 @@ async def run_tenant(ctx: Ctx) -> dict[str, int]:
     swept = await engine.sla_sweep(ctx)
     stats.update({"reminders": swept["reminders"], "escalations": swept["escalations"]})
     stats.update(await deliver_queued(ctx))
+    stats.update(await gsp_service.run_due_jobs(ctx))
     return stats
 
 

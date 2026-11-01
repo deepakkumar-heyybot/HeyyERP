@@ -129,6 +129,14 @@ SETTINGS: tuple[SettingDef, ...] = (
                "escalation)", "DEFAULT"),
     SettingDef("notifyMaxAttempts", "int", 5, "Times a notification is tried before it is marked "
                "failed", "DEFAULT", minimum=1, maximum=20),
+    SettingDef("eInvoice", "enum", "OFF", "E-invoice (IRN) through the GST provider: OFF (numbers "
+               "are recorded by hand), MANUAL (a person generates it) or AUTO (queued when the "
+               "invoice is raised, for customers with a GSTIN)", "DEFAULT",
+               options=("OFF", "MANUAL", "AUTO")),
+    SettingDef("ewbThreshold", "decimal", "50000.00", "Consignment value above which an e-way "
+               "bill is expected (shown as a reminder)", "DEFAULT", minimum=0),
+    SettingDef("gspMaxAttempts", "int", 5, "Times a call to the GST provider is tried before it "
+               "is marked failed", "DEFAULT", minimum=1, maximum=20),
     SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
                "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",
