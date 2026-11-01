@@ -1,33 +1,33 @@
 """A report as a printable PDF: landscape A4, the title and filters on top, a table whose header
 repeats on every page, numbers aligned right, and "Page x of y" at the foot.
 
-The standard PDF fonts only draw Western letters, so any other character is shown as "?" rather
-than as a broken box. Text is escaped before it is laid out, so a name can never inject markup.
+Text is laid out with a shaping engine (HarfBuzz), so Hindi (Devanagari) and English print correctly
+together: Noto Sans for Latin text and Noto Sans Devanagari for the rest, both bundled in
+`reports/fonts` (SIL Open Font License, see OFL.txt there). A character that neither font has is
+drawn as a replacement mark by the library, never as markup: nothing in the data is interpreted.
 """
 
-import io
+import re
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.pdfgen import canvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from fpdf import FPDF
+from fpdf.enums import TableCellFillMode
+from fpdf.fonts import FontFace
 
 from heyyerp_api.reports.registry import Column
 
 COMPANY = "heyyERP · V-Rub Suspensions"
-PAGE = landscape(A4)
-MARGIN = 12 * mm
+FONTS = Path(__file__).parent / "fonts"
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+GREEN = (31, 111, 92)
 
 
-def latin(text: str) -> str:
-    """The text with anything the standard fonts cannot draw replaced by a question mark."""
-    return text.encode("cp1252", errors="replace").decode("cp1252")
+def clean(text: str) -> str:
+    """The text without control characters, which have no place in a printed cell."""
+    return CONTROL.sub("", text)
 
 
 def cell_text(value: Any, kind: str) -> str:
@@ -42,30 +42,30 @@ def cell_text(value: Any, kind: str) -> str:
         return value.strftime("%Y-%m-%d %H:%M")
     if isinstance(value, date):
         return value.isoformat()
-    return str(value)
+    return clean(str(value))
 
 
-class Numbered(canvas.Canvas):  # type: ignore[misc]
-    """A canvas that knows the page count, so every page can say "Page x of y"."""
+class ReportPdf(FPDF):
+    """Landscape A4 with the company name and "Page x of y" in the footer."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.pages: list[dict[str, Any]] = []
+    def __init__(self) -> None:
+        super().__init__(orientation="L", unit="mm", format="A4")
+        self.set_margins(12, 12, 12)
+        self.set_auto_page_break(auto=True, margin=14)
+        for style, suffix in (("", "Regular"), ("B", "Bold")):
+            self.add_font("NotoSans", style, str(FONTS / f"NotoSans-{suffix}.ttf"))
+            self.add_font("NotoDeva", style, str(FONTS / f"NotoSansDevanagari-{suffix}.ttf"))
+        self.set_fallback_fonts(["NotoDeva"])
+        self.set_text_shaping(True)
+        self.alias_nb_pages()
 
-    def showPage(self) -> None:  # noqa: N802 (reportlab's name)
-        self.pages.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self) -> None:
-        total = len(self.pages)
-        for state in self.pages:
-            self.__dict__.update(state)
-            self.setFont("Helvetica", 7)
-            self.setFillColor(colors.grey)
-            self.drawString(MARGIN, 7 * mm, latin(COMPANY))
-            self.drawRightString(PAGE[0] - MARGIN, 7 * mm, f"Page {self._pageNumber} of {total}")
-            super().showPage()
-        super().save()
+    def footer(self) -> None:
+        self.set_y(-9)
+        self.set_font("NotoSans", "", 7)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 4, COMPANY, align="L")
+        self.set_x(-60)
+        self.cell(48, 4, f"Page {self.page_no()} of {{nb}}", align="R")
 
 
 def widths(columns: tuple[Column, ...], data: list[dict[str, Any]], room: float) -> list[float]:
@@ -80,40 +80,35 @@ def widths(columns: tuple[Column, ...], data: list[dict[str, Any]], room: float)
 
 def to_pdf(title: str, filters: dict[str, str], columns: tuple[Column, ...],
            data: list[dict[str, Any]], generated: datetime) -> bytes:
-    out = io.BytesIO()
-    doc = SimpleDocTemplate(
-        out, pagesize=PAGE, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
-        bottomMargin=14 * mm, title=latin(title), author=latin(COMPANY))
-    heading = ParagraphStyle("h", fontName="Helvetica-Bold", fontSize=14, leading=17)
-    small = ParagraphStyle("s", fontName="Helvetica", fontSize=8, leading=10, textColor=colors.grey)
-    body = ParagraphStyle("b", fontName="Helvetica", fontSize=7, leading=8.5)
-    right = ParagraphStyle("r", parent=body, alignment=2)
-    head = ParagraphStyle("t", parent=body, fontName="Helvetica-Bold", textColor=colors.white)
-    head_right = ParagraphStyle("tr", parent=head, alignment=2)
-    shown = ", ".join(f"{k} = {v}" for k, v in filters.items()) or "none"
-    story: list[Any] = [
-        Paragraph(escape(latin(title)), heading),
-        Paragraph(escape(latin(f"Filters: {shown}  |  {len(data)} row(s)  |  "
-                               f"Generated {generated:%Y-%m-%d %H:%M} UTC")), small),
-        Spacer(1, 4 * mm)]
+    pdf = ReportPdf()
+    pdf.set_title(clean(title))
+    pdf.set_author(COMPANY)
+    pdf.add_page()
+    pdf.set_font("NotoSans", "B", 14)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 8, clean(title), new_x="LMARGIN", new_y="NEXT")
+    shown = ", ".join(f"{k} = {clean(v)}" for k, v in filters.items()) or "none"
+    pdf.set_font("NotoSans", "", 8)
+    pdf.set_text_color(110, 110, 110)
+    pdf.cell(0, 5, f"Filters: {shown}  |  {len(data)} row(s)  |  "
+                   f"Generated {generated:%Y-%m-%d %H:%M} UTC", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("NotoSans", "", 7)
     numeric = {c.key for c in columns if c.kind in ("money", "number")}
-    table_data: list[list[Any]] = [[
-        Paragraph(escape(latin(c.label)), head_right if c.key in numeric else head)
-        for c in columns]]
-    for row in data:
-        table_data.append([
-            Paragraph(escape(latin(cell_text(row.get(c.key), c.kind))),
-                      right if c.key in numeric else body) for c in columns])
-    if not data:
-        table_data.append([Paragraph("No rows", body)] + [""] * (len(columns) - 1))
-    table = Table(table_data, colWidths=widths(columns, data, PAGE[0] - 2 * MARGIN),
-                  repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f6f5c")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f6f5")]),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#d5dedb")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
-    story.append(table)
-    doc.build(story, canvasmaker=Numbered)
-    return out.getvalue()
+    with pdf.table(
+            col_widths=tuple(widths(columns, data, pdf.epw)),
+            text_align=tuple("RIGHT" if c.key in numeric else "LEFT" for c in columns),
+            headings_style=FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=GREEN),
+            borders_layout="HORIZONTAL_LINES", line_height=4.2,
+            cell_fill_color=(242, 246, 245), cell_fill_mode=TableCellFillMode.ROWS) as table:
+        head = table.row()
+        for c in columns:
+            head.cell(clean(c.label))
+        for row in data:
+            line = table.row()
+            for c in columns:
+                line.cell(cell_text(row.get(c.key), c.kind))
+        if not data:
+            table.row().cell("No rows")
+    return bytes(pdf.output())

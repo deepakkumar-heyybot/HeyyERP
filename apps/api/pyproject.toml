@@ -15,7 +15,8 @@ dependencies = [
     "psycopg[binary]>=3.2,<4.0",
     "openpyxl>=3.1,<4.0",
     "cryptography>=43,<51",
-    "reportlab>=4.0,<5.0",
+    "fpdf2>=2.8,<3.0",
+    "uharfbuzz>=0.40",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +51,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["openpyxl", "openpyxl.*", "reportlab", "reportlab.*", "pypdf", "pypdf.*"]
+module = ["openpyxl", "openpyxl.*", "pypdf", "pypdf.*", "uharfbuzz", "uharfbuzz.*"]
 ignore_missing_imports = true
 
 [tool.ruff.lint.per-file-ignores]

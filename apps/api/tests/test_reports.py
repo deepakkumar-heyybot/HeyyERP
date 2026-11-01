@@ -157,7 +157,8 @@ def test_a_report_is_a_printable_pdf_with_every_row_and_safe_text(make_client, a
     assert "Sales register" in text and "Filters: unit_id" in text and "1 row(s)" in text
     assert "Page 1 of 1" in text and "2,000.00" in text  # the taxable amount, formatted
     assert "Maruti <b>Suzuki</b> & Sons" in text  # shown as text, never read as markup
-    assert "?" in text  # the characters the standard fonts cannot draw
+    assert any("ऀ" <= ch <= "ॿ" for ch in text)  # Hindi is printed, not turned into "?"
+    assert "?" not in text.replace("Filters", "")
     empty = sales.get(f"{R}/sales_register?unit_id={unit}&status=cancelled&format=pdf")
     assert empty.status_code == 200
     assert "No rows" in PdfReader(io.BytesIO(empty.content)).pages[0].extract_text()
