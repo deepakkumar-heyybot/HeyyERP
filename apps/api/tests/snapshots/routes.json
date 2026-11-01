@@ -162,6 +162,8 @@
  "GET /api/v1/ref/payment-terms",
  "GET /api/v1/ref/tax-codes",
  "GET /api/v1/ref/uom",
+ "GET /api/v1/reports",
+ "GET /api/v1/reports/{key}",
  "GET /api/v1/sales/challans",
  "GET /api/v1/sales/challans/{challan_id}",
  "GET /api/v1/sales/customers/{customer_id}/credit",
