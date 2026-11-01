@@ -2,8 +2,9 @@
 
 `GET /reports` lists the reports the caller's role may run (the `reports` module plus the module the
 report's data belongs to). `GET /reports/{key}` runs one: the filters are the query parameters the
-catalog lists for it, and the rows are always cut down to the caller's plants. `format=csv` or
-`format=xlsx` returns a file (at most 50,000 rows; narrow the filters if there are more); the JSON
+catalog lists for it, and the rows are always cut down to the caller's plants. `format=csv`,
+`format=xlsx` or `format=pdf` returns a file (at most 50,000 rows, 5,000 for a PDF; narrow the
+filters if there are more); the JSON
 answer is limited by `limit` (default 1,000, at most 5,000) and says when it was cut. Every run is
 recorded in the audit log with who ran it, the filters and the number of rows.
 """
@@ -24,13 +25,16 @@ from heyyerp_api.masters.common import (
     scope_clause,
 )
 from heyyerp_api.reports.export import to_csv, to_xlsx
+from heyyerp_api.reports.pdf import to_pdf
 from heyyerp_api.reports.registry import BY_KEY, REPORTS, Param, Report
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 read = requires_module("reports")
 EXPORT_MAX = 50_000
+PDF_MAX = 5_000  # a printed report is for reading, not for bulk data
 FILE_TYPES = {
     "csv": "text/csv; charset=utf-8",
+    "pdf": "application/pdf",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
@@ -102,7 +106,7 @@ async def catalog(ctx: Ctx = Depends(read)) -> list[ReportInfo]:
 
 @router.get("/{key}", response_model=None)
 async def run(
-    key: str, request: Request, file_format: Literal["json", "csv", "xlsx"] = Query(
+    key: str, request: Request, file_format: Literal["json", "csv", "xlsx", "pdf"] = Query(
         "json", alias="format"), limit: int = Query(1000, ge=1, le=5000),
     ctx: Ctx = Depends(read),
 ) -> Response | ReportRun:
@@ -126,7 +130,7 @@ async def run(
     if clause:
         conditions.append(clause)
     conditions += [known[name].fragment for name in values]
-    cap = limit if file_format == "json" else EXPORT_MAX
+    cap = limit if file_format == "json" else PDF_MAX if file_format == "pdf" else EXPORT_MAX
     sql = (f"{report.select} WHERE {' AND '.join(conditions)}"
            f"{' GROUP BY ' + report.group_by if report.group_by else ''} "
            f"ORDER BY {report.order_by} LIMIT :_cap")
@@ -135,7 +139,7 @@ async def run(
     data = data[:cap]
     if truncated and file_format != "json":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"More than {EXPORT_MAX} rows; narrow the filters")
+                            f"More than {cap} rows; narrow the filters")
     await audit(ctx, "report.run", "report", key,
                 {"format": file_format, "params": {k: str(v) for k, v in values.items()},
                  "rows": len(data)})
@@ -145,8 +149,14 @@ async def run(
             params={k: str(v) for k, v in values.items()},
             columns=[ColumnInfo(key=c.key, label=c.label, type=c.kind) for c in report.columns],
             rows=data, row_count=len(data), truncated=truncated)
-    body = to_csv(report.columns, data) if file_format == "csv" else to_xlsx(
-        report.title, report.columns, data)
+    now = datetime.now(UTC)
+    if file_format == "csv":
+        body = to_csv(report.columns, data)
+    elif file_format == "xlsx":
+        body = to_xlsx(report.title, report.columns, data)
+    else:
+        body = to_pdf(report.title, {k: str(v) for k, v in values.items()}, report.columns,
+                      data, now)
     return Response(
         content=body, media_type=FILE_TYPES[file_format],
         headers={"Content-Disposition":

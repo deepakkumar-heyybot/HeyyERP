@@ -124,7 +124,7 @@ def test_files_are_exports_that_cannot_run_as_formulas_and_every_run_is_audited(
     count = sql(api_database, "select count(*) from erp.audit_log where action = 'report.run' and "
                 "entity_id = 'sales_register'")[0]
     assert count >= 3  # the JSON run, the CSV and the Excel file
-    assert sales.get(f"{R}/sales_register?format=pdf").status_code == 422
+    assert sales.get(f"{R}/sales_register?format=docx").status_code == 422
 
 
 def test_bad_filters_are_refused(make_client, api_database):
@@ -136,3 +136,48 @@ def test_bad_filters_are_refused(make_client, api_database):
     assert sales.get(f"{R}/sales_register?status=").status_code == 422
     assert sales.get(f"{R}/sales_register?limit=0").status_code == 422
     assert sales.get(f"{R}/sales_register?limit=99999").status_code == 422
+
+
+def test_a_report_is_a_printable_pdf_with_every_row_and_safe_text(make_client, api_database):
+    from pypdf import PdfReader  # noqa: PLC0415
+
+    w = receivables_world(make_client, api_database)
+    unit = w["unit"]["unit_id"]
+    invoice(make_client, w, "10")
+    sql(api_database, "update erp.customer set name = %s where customer_id = %s",
+        "Maruti <b>Suzuki</b> & Sons हिन्दी", w["customer"]["customer_id"])
+    sales = Fresh(make_client, "SALES")
+    got = sales.get(f"{R}/sales_register?unit_id={unit}&format=pdf")
+    assert got.status_code == 200 and got.content.startswith(b"%PDF-")
+    assert "application/pdf" in got.headers["content-type"]
+    assert got.headers["content-disposition"].endswith('.pdf"')
+    assert got.headers["x-content-type-options"] == "nosniff"
+    pages = PdfReader(io.BytesIO(got.content)).pages
+    text = "\n".join(p.extract_text() for p in pages)
+    assert "Sales register" in text and "Filters: unit_id" in text and "1 row(s)" in text
+    assert "Page 1 of 1" in text and "2,000.00" in text  # the taxable amount, formatted
+    assert "Maruti <b>Suzuki</b> & Sons" in text  # shown as text, never read as markup
+    assert "?" in text  # the characters the standard fonts cannot draw
+    empty = sales.get(f"{R}/sales_register?unit_id={unit}&status=cancelled&format=pdf")
+    assert empty.status_code == 200
+    assert "No rows" in PdfReader(io.BytesIO(empty.content)).pages[0].extract_text()
+
+
+def test_a_long_pdf_repeats_its_header_and_numbers_its_pages(make_client, api_database):
+    from pypdf import PdfReader  # noqa: PLC0415
+
+    w = receivables_world(make_client, api_database)
+    unit = w["unit"]["unit_id"]
+    invoice(make_client, w, "10")
+    sql(api_database, "insert into erp.customer_invoice(tenant_id, unit_id, customer_id, "
+        "dispatch_id, invoice_no, issue_date, due_date, taxable_amount, tax_amount, status) "
+        "select tenant_id, unit_id, customer_id, dispatch_id, 'BULK-' || g, issue_date, due_date, "
+        "100, 18, 'CANCELLED' from erp.customer_invoice, generate_series(1, 120) g where "
+        "unit_id = %s and status = 'ISSUED' limit 120", unit)
+    got = Fresh(make_client, "SALES").get(f"{R}/sales_register?unit_id={unit}&format=pdf")
+    assert got.status_code == 200
+    pages = PdfReader(io.BytesIO(got.content)).pages
+    assert len(pages) >= 2
+    first, last = pages[0].extract_text(), pages[-1].extract_text()
+    assert "Invoice" in last and f"Page {len(pages)} of {len(pages)}" in last  # header repeats
+    assert "Page 1 of" in first
