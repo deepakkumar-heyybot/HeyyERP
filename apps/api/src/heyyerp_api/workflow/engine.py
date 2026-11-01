@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 
 from heyyerp_api.masters.common import Ctx, audit, count, db_errors, not_found, one, rows
+from heyyerp_api.notify.queue import approval_data_for, queue
 from heyyerp_api.rbac.catalog import ROLES
 from heyyerp_api.security import has_permission
 from heyyerp_api.workflow import documents  # noqa: F401  (registers the vendor adapter)
@@ -388,32 +389,21 @@ async def sla_sweep(ctx: Ctx) -> dict[str, int]:
 
 
 async def notify_role(ctx: Ctx, approval_id: UUID, template: str, role: str | None) -> int:
-    if role is None or await one(
-        ctx, "SELECT 1 AS x FROM erp.notification WHERE reference_id = :id AND template_code = :t "
-        "AND recipient_user_id IN (SELECT u.user_id FROM erp.app_user u JOIN erp.role r "
-        "ON r.role_id = u.role_id WHERE r.code = :role)",
-        {"id": approval_id, "t": template, "role": role},
-    ):
+    """Tell everyone holding a role (on the channels the message uses); returns new in-app ones."""
+    if role is None:
         return 0
-    made = await rows(
-        ctx,
-        "INSERT INTO erp.notification(tenant_id, recipient_user_id, channel, template_code, "
-        "reference_type, reference_id) SELECT erp.current_tenant_id(), u.user_id, 'IN_APP', :t, "
-        "'approval', :id FROM erp.app_user u JOIN erp.role r ON r.role_id = u.role_id "
-        "WHERE r.code = :role AND u.status = 'ACTIVE' RETURNING notification_id",
-        {"id": approval_id, "t": template, "role": role},
-    )
-    return len(made)
+    people = [r["user_id"] for r in await rows(
+        ctx, "SELECT u.user_id FROM erp.app_user u JOIN erp.role r ON r.role_id = u.role_id WHERE "
+        "r.code = :role AND u.status = 'ACTIVE'", {"role": role})]
+    if not people:
+        return 0
+    return await queue(ctx, people, template, "approval", approval_id,
+                       await approval_data_for(ctx, approval_id))
 
 
 async def notify_requester(ctx: Ctx, approval_id: UUID, template: str) -> None:
-    await rows(
-        ctx,
-        "INSERT INTO erp.notification(tenant_id, recipient_user_id, channel, template_code, "
-        "reference_type, reference_id) SELECT erp.current_tenant_id(), i.submitted_by, 'IN_APP', "
-        ":t, 'approval', i.approval_id FROM erp.approval_instance i WHERE i.approval_id = :id "
-        "AND i.submitted_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM erp.notification n "
-        "WHERE n.reference_id = i.approval_id AND n.template_code = :t "
-        "AND n.recipient_user_id = i.submitted_by) RETURNING notification_id",
-        {"id": approval_id, "t": template},
-    )
+    row = await one(ctx, "SELECT submitted_by FROM erp.approval_instance WHERE approval_id = :id",
+                    {"id": approval_id})
+    if row is not None and row["submitted_by"] is not None:
+        await queue(ctx, [row["submitted_by"]], template, "approval", approval_id,
+                    await approval_data_for(ctx, approval_id))

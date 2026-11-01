@@ -32,6 +32,21 @@ class Settings(BaseSettings):
     # 32 random bytes, base64. Encrypts bank account numbers; the same key for everyone who shares
     # a database. Without it the features that store such values answer 503.
     data_encryption_key: str | None = None
+    # Notifications and background jobs. "console" only logs (development and tests); the real
+    # senders need their credentials here, never in the database.
+    mail_provider: str = "console"  # console or smtp
+    smtp_host: str | None = None
+    smtp_port: int = 465
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    mail_from: str = "HeyyERP <noreply@heyybot.com>"
+    whatsapp_provider: str = "console"  # console or cloud (WhatsApp Business Cloud API)
+    whatsapp_token: str | None = None
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_template: str = "heyyerp_alert"  # an approved template with two text variables
+    whatsapp_template_language: str = "en"
+    background_worker: bool = False  # run the notification and SLA jobs inside this process
+    worker_interval_seconds: int = Field(default=60, ge=5, le=3600)
 
 
 @lru_cache

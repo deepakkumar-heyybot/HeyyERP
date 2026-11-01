@@ -626,6 +626,21 @@
    "default": 2048,
    "rule": "DEFAULT"
   },
+  "notifyEmail": {
+   "kind": "bool",
+   "default": true,
+   "rule": "DEFAULT"
+  },
+  "notifyWhatsapp": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "notifyMaxAttempts": {
+   "kind": "int",
+   "default": 5,
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,

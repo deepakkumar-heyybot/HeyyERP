@@ -123,6 +123,12 @@ SETTINGS: tuple[SettingDef, ...] = (
                "means no limit", "DEFAULT", nullable=True, minimum=0),
     SettingDef("attachmentMaxKb", "int", 2048, "Largest file that can be attached to a record "
                "(KB)", "DEFAULT", minimum=50, maximum=10240),
+    SettingDef("notifyEmail", "bool", True, "Send e-mail notifications (approvals, reminders)",
+               "DEFAULT"),
+    SettingDef("notifyWhatsapp", "bool", False, "Send WhatsApp notifications (second reminder, "
+               "escalation)", "DEFAULT"),
+    SettingDef("notifyMaxAttempts", "int", 5, "Times a notification is tried before it is marked "
+               "failed", "DEFAULT", minimum=1, maximum=20),
     SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
                "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",

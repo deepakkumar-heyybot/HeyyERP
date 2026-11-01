@@ -38,6 +38,7 @@ from heyyerp_api.manufacturing.shopfloor import router as shopfloor_router
 from heyyerp_api.masters.org import router as org_router
 from heyyerp_api.masters.parties import router as parties_router
 from heyyerp_api.masters.reference import router as reference_router
+from heyyerp_api.notify.api import router as notifications_router
 from heyyerp_api.procurement.indents import router as indents_router
 from heyyerp_api.procurement.orders import router as orders_router
 from heyyerp_api.procurement.rfq import router as rfq_router
@@ -121,4 +122,5 @@ api_router.include_router(kaizen_router)
 api_router.include_router(calendar_router)
 api_router.include_router(attachments_router)
 api_router.include_router(reports_router)
+api_router.include_router(notifications_router)
 api_router.include_router(tds_router)
