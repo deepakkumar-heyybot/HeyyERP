@@ -14,6 +14,8 @@ from heyyerp_api.business_rules import service as rules
 from heyyerp_api.config import get_settings
 from heyyerp_api.masters.common import Ctx, one, rows
 
+LINK_KINDS = ("APPROVAL_PENDING", "APPROVAL_REMINDER_50", "APPROVAL_REMINDER_90",
+              "APPROVAL_OVERDUE")  # messages that may carry a one-time approve link
 # Which channels each kind of message goes on (BRD section 5): a first reminder is in-app and
 # e-mail, the second adds WhatsApp, an overdue approval is everywhere.
 CHANNELS = {
@@ -73,20 +75,29 @@ async def queue(
 ) -> int:
     """Queue the message for every recipient on each channel the company uses; returns how many
     in-app notifications were new (so a repeated job reports zero)."""
+    from heyyerp_api.workflow import links  # noqa: PLC0415  (the engine imports this module)
+
     subject, body = render(template_code, data)
     fresh = 0
     for channel in CHANNELS.get(base(template_code), ("IN_APP",)):
         if not await enabled(ctx, channel):
             continue
-        made = await rows(
-            ctx, "INSERT INTO erp.notification(tenant_id, recipient_user_id, channel, "
-            "template_code, reference_type, reference_id, status, subject, body, sent_at) "
-            "SELECT erp.current_tenant_id(), u.user_id, :ch, :t, :rt, :rid, CASE WHEN :ch = "
-            "'IN_APP' THEN 'SENT' ELSE 'QUEUED' END, :s, :b, CASE WHEN :ch = 'IN_APP' THEN now() "
-            "END FROM erp.app_user u WHERE u.user_id = ANY(CAST(:ids AS uuid[])) AND u.status = "
-            "'ACTIVE' ON CONFLICT DO NOTHING RETURNING notification_id",
-            {"ch": channel, "t": template_code, "rt": ref_type, "rid": ref_id, "s": subject,
-             "b": body, "ids": list(recipients)})
+        made = []
+        for person in recipients:
+            text_ = body
+            if channel != "IN_APP" and base(template_code) in LINK_KINDS:
+                token = await links.issue(ctx, ref_id, int(data.get("step") or 0), person)
+                if token:
+                    text_ += f"\nApprove or reject (one time): {links.url(token)}"
+            made += await rows(
+                ctx, "INSERT INTO erp.notification(tenant_id, recipient_user_id, channel, "
+                "template_code, reference_type, reference_id, status, subject, body, sent_at) "
+                "SELECT erp.current_tenant_id(), u.user_id, :ch, :t, :rt, :rid, CASE WHEN :ch = "
+                "'IN_APP' THEN 'SENT' ELSE 'QUEUED' END, :s, :b, CASE WHEN :ch = 'IN_APP' THEN "
+                "now() END FROM erp.app_user u WHERE u.user_id = :id AND u.status = 'ACTIVE' ON "
+                "CONFLICT DO NOTHING RETURNING notification_id",
+                {"ch": channel, "t": template_code, "rt": ref_type, "rid": ref_id, "s": subject,
+                 "b": text_, "id": person})
         if channel == "IN_APP":
             fresh = len(made)
     return fresh

@@ -656,6 +656,21 @@
    "default": 5,
    "rule": "DEFAULT"
   },
+  "approvalByLink": {
+   "kind": "bool",
+   "default": false,
+   "rule": "DEFAULT"
+  },
+  "approvalLinkHours": {
+   "kind": "int",
+   "default": 48,
+   "rule": "DEFAULT"
+  },
+  "approvalLinkMaxAmount": {
+   "kind": "decimal",
+   "default": "50000.00",
+   "rule": "DEFAULT"
+  },
   "invoiceCopies": {
    "kind": "enum",
    "default": "ONE",

@@ -137,6 +137,13 @@ SETTINGS: tuple[SettingDef, ...] = (
                "bill is expected (shown as a reminder)", "DEFAULT", minimum=0),
     SettingDef("gspMaxAttempts", "int", 5, "Times a call to the GST provider is tried before it "
                "is marked failed", "DEFAULT", minimum=1, maximum=20),
+    SettingDef("approvalByLink", "bool", False, "Approvers may approve or reject from the link in "
+               "an e-mail or WhatsApp message, once (administrator, MD and accounts roles, which "
+               "need a second factor, never get one)", "DEFAULT"),
+    SettingDef("approvalLinkHours", "int", 48, "Hours an approval link works", "DEFAULT",
+               minimum=1, maximum=720),
+    SettingDef("approvalLinkMaxAmount", "decimal", "50000.00", "Largest amount that can be "
+               "decided from a link; larger ones need a sign-in", "DEFAULT", minimum=0),
     SettingDef("invoiceCopies", "enum", "ONE", "Copies printed on a tax invoice: ONE, or THREE "
                "(Original for recipient, Duplicate for transporter, Triplicate for supplier)",
                "DEFAULT", options=("ONE", "THREE")),

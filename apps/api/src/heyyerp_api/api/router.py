@@ -62,6 +62,7 @@ from heyyerp_api.sales.pricing import router as pricing_router
 from heyyerp_api.sales.quotes import router as quotes_router
 from heyyerp_api.sales.scrap import router as scrap_router
 from heyyerp_api.workflow.api import router as approvals_router
+from heyyerp_api.workflow.links_api import router as approval_links_router
 from heyyerp_api.workflow.rules import router as approval_rules_router
 
 api_router = APIRouter()
@@ -126,5 +127,6 @@ api_router.include_router(attachments_router)
 api_router.include_router(reports_router)
 api_router.include_router(notifications_router)
 api_router.include_router(gsp_router)
+api_router.include_router(approval_links_router)
 api_router.include_router(invoice_print_router)
 api_router.include_router(tds_router)

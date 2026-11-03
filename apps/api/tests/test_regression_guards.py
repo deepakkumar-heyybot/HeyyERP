@@ -40,7 +40,14 @@ def test_the_api_surface_matches_the_snapshot():
 def test_every_endpoint_except_health_rejects_an_anonymous_caller():
     client = TestClient(app)
     answers = {}
+    # Open on purpose, because the secret in the link is the credential; listing them here means a
+    # new open endpoint must be added deliberately. They are exercised in test_approval_links.
+    public = {"GET /api/v1/public/approval-links/{token}",
+              "POST /api/v1/public/approval-links/{token}/decide"}
+    assert public <= set(snapshots.routes())
     for operation in snapshots.routes():
+        if operation in public:
+            continue
         method, path = operation.split(" ", 1)
         url = re.sub(r"\{[^}]+\}", "00000000-0000-0000-0000-000000000001", path)
         body = {} if method in ("POST", "PUT", "PATCH") else None

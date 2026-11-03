@@ -40,12 +40,12 @@ def scratch_db():
 
 def test_clean_database_reaches_head_with_the_full_schema(scratch_db):
     with psycopg.connect(scratch_db) as db:
-        assert db.execute("select version_num from alembic_version").fetchone() == ("0034",)
+        assert db.execute("select version_num from alembic_version").fetchone() == ("0035",)
         tables = db.execute(
             "select count(*) from information_schema.tables "
             "where table_schema = 'erp' and table_type = 'BASE TABLE'"
         ).fetchone()[0]
-        assert tables == 146  # baseline 126 + 11 added since (specs, ECN, numbering, issue, reservation, shift loss, rework, inspection plan, plan params, hold, price, quote, quote line, account role, vendor bank, kaizen saving, holiday, shift, attachment, print profile)
+        assert tables == 147  # baseline 126 + 11 added since (specs, ECN, numbering, issue, reservation, shift loss, rework, inspection plan, plan params, hold, price, quote, quote line, account role, vendor bank, kaizen saving, holiday, shift, attachment, print profile, approval link)
         # The baseline's format()/RAISE '%' text must have survived intact.
         body = db.execute(
             "select prosrc from pg_proc where proname = 'prevent_immutable_row_change'"

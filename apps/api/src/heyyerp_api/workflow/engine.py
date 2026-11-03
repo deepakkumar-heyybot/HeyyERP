@@ -188,6 +188,7 @@ async def decide(
     note: str | None,
     idempotency_key: str,
     expected_step: int | None = None,
+    via: str = "APP",
 ) -> None:
     replay = await one(
         ctx, "SELECT approval_id FROM erp.approval_action WHERE idempotency_key = :key",
@@ -223,10 +224,12 @@ async def decide(
         await one(
             ctx,
             "INSERT INTO erp.approval_action(tenant_id, approval_id, step_no, actor_user_id, "
-            "decision, acting_as_role, note, idempotency_key) VALUES (erp.current_tenant_id(), "
-            ":id, :step, :me, :decision, :role, :note, :key) RETURNING approval_action_id",
+            "decision, acting_as_role, note, idempotency_key, via) VALUES "
+            "(erp.current_tenant_id(), :id, :step, :me, :decision, :role, :note, :key, :via) "
+            "RETURNING approval_action_id",
             {"id": approval_id, "step": step["seq"], "me": me.app_user_id,
-             "decision": recorded, "role": step["role"], "note": note, "key": idempotency_key},
+             "decision": recorded, "role": step["role"], "note": note, "key": idempotency_key,
+             "via": via},
         )
     last = instance["current_step"] >= len(steps)
     new_status = "PENDING" if approve and not last else ("APPROVED" if approve else "REJECTED")
