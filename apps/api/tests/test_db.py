@@ -40,7 +40,7 @@ def scratch_db():
 
 def test_clean_database_reaches_head_with_the_full_schema(scratch_db):
     with psycopg.connect(scratch_db) as db:
-        assert db.execute("select version_num from alembic_version").fetchone() == ("0036",)
+        assert db.execute("select version_num from alembic_version").fetchone() == ("0037",)
         tables = db.execute(
             "select count(*) from information_schema.tables "
             "where table_schema = 'erp' and table_type = 'BASE TABLE'"
@@ -126,3 +126,37 @@ def test_app_role_cannot_see_or_write_another_tenants_rows(scratch_db):
             "select rolsuper or rolbypassrls from pg_roles where rolname = current_user"
         )
         assert flags.fetchone() == (False,)
+
+
+# Foreign keys that are deliberately not indexed: people ("..._by") and small reference tables.
+UNINDEXED_OK = {"permission_id", "role_id", "sla_policy_id", "head_role_id", "parent_department_id",
+                "parent_category_id", "category_id", "uom_id", "payment_term_id", "tax_code_id"}
+
+
+def test_every_foreign_key_that_is_looked_up_by_has_an_index(scratch_db):
+    """A new table whose foreign key has no index would read the whole table on every detail load."""
+    with psycopg.connect(scratch_db) as db:
+        found = db.execute(
+            """
+            with fk as (
+              select c.conrelid, c.conrelid::regclass::text as tbl,
+                     (select array_agg(a.attname order by k.ord)
+                        from unnest(c.conkey) with ordinality k(n, ord)
+                        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.n) as cols
+              from pg_constraint c join pg_namespace n on n.oid = c.connamespace
+              where c.contype = 'f' and n.nspname = 'erp'),
+            idx as (
+              select i.indrelid,
+                     (select array_agg(a.attname order by k.ord)
+                        from unnest(i.indkey::int2[]) with ordinality k(n, ord)
+                        join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.n) as cols
+              from pg_index i join pg_class cl on cl.oid = i.indrelid
+                   join pg_namespace n on n.oid = cl.relnamespace where n.nspname = 'erp')
+            select f.tbl, (array_remove(f.cols, 'tenant_id'))[1] from fk f
+            where (array_remove(f.cols, 'tenant_id'))[1] is not null and not exists (
+              select 1 from idx x where x.indrelid = f.conrelid
+                and (array_remove(x.cols, 'tenant_id'))[1] = (array_remove(f.cols, 'tenant_id'))[1])
+            """).fetchall()
+    bare = sorted(f"{t.removeprefix('erp.')}.{c}" for t, c in found
+                  if not c.endswith("_by") and c not in UNINDEXED_OK)
+    assert not bare, f"Foreign keys without an index (add one in a migration): {bare}"
