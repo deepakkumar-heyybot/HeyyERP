@@ -62,6 +62,7 @@ from heyyerp_api.sales.pricing import router as pricing_router
 from heyyerp_api.sales.quotes import router as quotes_router
 from heyyerp_api.sales.scrap import router as scrap_router
 from heyyerp_api.workflow.api import router as approvals_router
+from heyyerp_api.workflow.delegation import router as delegation_router
 from heyyerp_api.workflow.links_api import router as approval_links_router
 from heyyerp_api.workflow.rules import router as approval_rules_router
 
@@ -73,6 +74,7 @@ api_router.include_router(reference_router)
 api_router.include_router(parties_router)
 api_router.include_router(admin_users_router)
 api_router.include_router(admin_audit_router)
+api_router.include_router(delegation_router)  # before /approvals/{id}
 api_router.include_router(approvals_router)
 api_router.include_router(approval_rules_router)
 api_router.include_router(business_rules_router)

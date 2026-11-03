@@ -22,6 +22,7 @@ from heyyerp_api.business_rules import service as rules
 from heyyerp_api.config import get_settings
 from heyyerp_api.gsp import service as gsp_service
 from heyyerp_api.masters.common import Ctx, one, rows
+from heyyerp_api.notify import shift_alerts
 from heyyerp_api.notify.queue import approval_data_for, queue
 from heyyerp_api.notify.senders import sender_for, whatsapp_number
 from heyyerp_api.workflow import engine
@@ -40,9 +41,7 @@ class SystemCtx:
 
 async def step_recipients(ctx: Ctx, approval_id: Any, payload: dict[str, Any]) -> list[Any]:
     if payload.get("role"):
-        return [r["user_id"] for r in await rows(
-            ctx, "SELECT u.user_id FROM erp.app_user u JOIN erp.role r ON r.role_id = u.role_id "
-            "WHERE r.code = :role AND u.status = 'ACTIVE'", {"role": payload["role"]})]
+        return await engine.role_holders(ctx, payload["role"])
     row = await one(
         ctx, "SELECT route_snapshot->'steps'->(CAST(:step AS int) - 1)->>'user_id' AS uid FROM "
         "erp.approval_instance WHERE approval_id = :id", {"step": payload.get("step", 1),
@@ -133,6 +132,7 @@ async def run_tenant(ctx: Ctx) -> dict[str, int]:
     stats = await relay_outbox(ctx)
     swept = await engine.sla_sweep(ctx)
     stats.update({"reminders": swept["reminders"], "escalations": swept["escalations"]})
+    stats.update(await shift_alerts.run(ctx))
     stats.update(await deliver_queued(ctx))
     stats.update(await gsp_service.run_due_jobs(ctx))
     return stats

@@ -144,6 +144,11 @@ SETTINGS: tuple[SettingDef, ...] = (
                minimum=1, maximum=720),
     SettingDef("approvalLinkMaxAmount", "decimal", "50000.00", "Largest amount that can be "
                "decided from a link; larger ones need a sign-in", "DEFAULT", minimum=0),
+    SettingDef("delegationMaxDays", "int", 30, "Longest period for which a person may hand their "
+               "approvals to someone else", "DEFAULT", minimum=1, maximum=365),
+    SettingDef("shiftAlertAfterMinutes", "int", 30, "Minutes after a shift ends (and its grace "
+               "time) before planners are told that machines have no production entry; 0 switches "
+               "the alert off", "DEFAULT", minimum=0, maximum=720),
     SettingDef("invoiceCopies", "enum", "ONE", "Copies printed on a tax invoice: ONE, or THREE "
                "(Original for recipient, Duplicate for transporter, Triplicate for supplier)",
                "DEFAULT", options=("ONE", "THREE")),

@@ -671,6 +671,16 @@
    "default": "50000.00",
    "rule": "DEFAULT"
   },
+  "delegationMaxDays": {
+   "kind": "int",
+   "default": 30,
+   "rule": "DEFAULT"
+  },
+  "shiftAlertAfterMinutes": {
+   "kind": "int",
+   "default": 30,
+   "rule": "DEFAULT"
+  },
   "invoiceCopies": {
    "kind": "enum",
    "default": "ONE",

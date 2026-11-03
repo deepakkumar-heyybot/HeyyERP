@@ -24,6 +24,7 @@ CHANNELS = {
     "APPROVAL_REMINDER_90": ("IN_APP", "WHATSAPP"),
     "APPROVAL_OVERDUE": ("IN_APP", "WHATSAPP", "EMAIL"),
     "APPROVAL_DECIDED": ("IN_APP", "EMAIL"),
+    "SHIFT_NO_ENTRY": ("IN_APP", "WHATSAPP"),
 }
 
 
@@ -59,6 +60,11 @@ def render(template_code: str, data: dict[str, Any]) -> tuple[str, str]:
     if kind == "APPROVAL_DECIDED":
         verdict = str(data.get("status", "decided")).lower()
         return f"{title} was {verdict}", f"Your request {title} was {verdict}.\n{link}"
+    if kind == "SHIFT_NO_ENTRY":
+        machines = ", ".join(data.get("machines") or [])
+        return (f"Shift {data.get('shift')} of {data.get('day')} has no production entry",
+                f"No production entry yet for shift {data.get('shift')} of {data.get('day')} on: "
+                f"{machines}.")
     return title, str(data.get("text", title))
 
 

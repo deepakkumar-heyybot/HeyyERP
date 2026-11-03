@@ -94,6 +94,30 @@ def holds_step(step: dict[str, Any], user_id: UUID, role: str) -> bool:
     return bool(step["role"] == role)
 
 
+# The people a person stands in for right now: those who delegated their role's approvals to them.
+DELEGATORS = (
+    "SELECT d.from_user_id AS uid, r.code AS role FROM erp.approval_delegation d JOIN "
+    "erp.app_user f ON f.user_id = d.from_user_id AND f.status = 'ACTIVE' JOIN erp.role r ON "
+    "r.role_id = f.role_id WHERE d.to_user_id = :duid AND d.active AND now() >= d.valid_from AND "
+    "now() <= d.valid_to"
+)
+
+
+async def delegators(ctx: Ctx, user_id: UUID) -> list[dict[str, Any]]:
+    return await rows(ctx, DELEGATORS, {"duid": user_id})
+
+
+async def role_holders(ctx: Ctx, role: str) -> list[UUID]:
+    """Everyone holding the role, and everyone standing in for one of them today."""
+    return [r["user_id"] for r in await rows(
+        ctx, "SELECT u.user_id FROM erp.app_user u JOIN erp.role r ON r.role_id = u.role_id WHERE "
+        "r.code = :role AND u.status = 'ACTIVE' UNION SELECT d.to_user_id FROM "
+        "erp.approval_delegation d JOIN erp.app_user f ON f.user_id = d.from_user_id AND "
+        "f.status = 'ACTIVE' JOIN erp.role fr ON fr.role_id = f.role_id JOIN erp.app_user t ON "
+        "t.user_id = d.to_user_id AND t.status = 'ACTIVE' WHERE fr.code = :role AND d.active AND "
+        "now() >= d.valid_from AND now() <= d.valid_to", {"role": role})]
+
+
 async def emit(ctx: Ctx, event_type: str, approval_id: UUID, payload: dict[str, Any]) -> None:
     """Outbox row; the Phase 12 relay turns these into notifications and real-time updates."""
     await one(
@@ -214,22 +238,33 @@ async def decide(
     steps = instance["route_snapshot"]["steps"]
     step = steps[instance["current_step"] - 1]
     override = False
+    on_behalf: UUID | None = None
     if not holds_step(step, me.app_user_id, me.role):
-        if not has_permission(ctx.principal, "approval.override"):
+        for d in await delegators(ctx, me.app_user_id):
+            if holds_step(step, d["uid"], d["role"]):
+                on_behalf = d["uid"]
+                break
+        if on_behalf is not None:
+            if instance["submitted_by"] == on_behalf:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "You cannot decide the submission of the person you stand in for")
+        elif not has_permission(ctx.principal, "approval.override"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "You are not the approver for this step")
-        override = True
+        else:
+            override = True
     approve = decision == "APPROVE"
     recorded = ("OVERRIDE_" if override else "") + ("APPROVE" if approve else "REJECT")
     with db_errors("Approval step"):
         await one(
             ctx,
             "INSERT INTO erp.approval_action(tenant_id, approval_id, step_no, actor_user_id, "
-            "decision, acting_as_role, note, idempotency_key, via) VALUES "
-            "(erp.current_tenant_id(), :id, :step, :me, :decision, :role, :note, :key, :via) "
-            "RETURNING approval_action_id",
+            "decision, acting_as_role, note, idempotency_key, via, on_behalf_of) "
+            "VALUES (erp.current_tenant_id(), :id, :step, :me, :decision, :role, :note, :key, "
+            ":via, :behalf) RETURNING approval_action_id",
             {"id": approval_id, "step": step["seq"], "me": me.app_user_id,
              "decision": recorded, "role": step["role"], "note": note, "key": idempotency_key,
-             "via": via},
+             "via": via, "behalf": on_behalf},
         )
     last = instance["current_step"] >= len(steps)
     new_status = "PENDING" if approve and not last else ("APPROVED" if approve else "REJECTED")
@@ -255,7 +290,7 @@ async def decide(
                     "status": new_status})
     await audit(ctx, "approval.decide", "approval", approval_id,
                 {"decision": recorded, "step": step["seq"], "note": note,
-                 "result": new_status})
+                 "result": new_status, "on_behalf_of": str(on_behalf) if on_behalf else None})
 
 
 # ------------------------------------------------------------------ reading
@@ -291,9 +326,11 @@ async def inbox(
     if scope == "mine":
         conditions.append(
             f"(({CURRENT}->>'user_id') = :uid OR (({CURRENT}->>'user_id') IS NULL "
-            f"AND ({CURRENT}->>'role') = :role))"
+            f"AND ({CURRENT}->>'role') = :role) OR ({CURRENT}->>'user_id') IN (SELECT "
+            f"CAST(uid AS text) FROM ({DELEGATORS}) dx) OR (({CURRENT}->>'user_id') IS NULL AND "
+            f"({CURRENT}->>'role') IN (SELECT role FROM ({DELEGATORS}) dy)))"
         )
-        params |= {"uid": str(me.app_user_id), "role": me.role}
+        params |= {"uid": str(me.app_user_id), "role": me.role, "duid": me.app_user_id}
     elif not (has_permission(ctx.principal, "approval.view_all")
               or has_permission(ctx.principal, "approval.override")):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Requires permission approval.view_all")
@@ -325,6 +362,9 @@ async def ensure_visible(ctx: Ctx, approval_id: UUID) -> None:
         or any(holds_step(s, me.app_user_id, me.role) for s in row["route_snapshot"]["steps"])
     ):
         return
+    for d in await delegators(ctx, me.app_user_id):
+        if any(holds_step(s, d["uid"], d["role"]) for s in row["route_snapshot"]["steps"]):
+            return
     raise not_found("Approval")
 
 
@@ -395,9 +435,7 @@ async def notify_role(ctx: Ctx, approval_id: UUID, template: str, role: str | No
     """Tell everyone holding a role (on the channels the message uses); returns new in-app ones."""
     if role is None:
         return 0
-    people = [r["user_id"] for r in await rows(
-        ctx, "SELECT u.user_id FROM erp.app_user u JOIN erp.role r ON r.role_id = u.role_id WHERE "
-        "r.code = :role AND u.status = 'ACTIVE'", {"role": role})]
+    people = await role_holders(ctx, role)
     if not people:
         return 0
     return await queue(ctx, people, template, "approval", approval_id,

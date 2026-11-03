@@ -268,6 +268,7 @@ def test_the_invoice_prints_with_the_qr_the_company_wording_and_the_chosen_copie
         text = before.pages[0].extract_text()
         assert "V-Rub Suspensions Pvt Ltd" in text and "Payment within 30 days" in text
         assert "TEST0001" in text and inv["invoice_no"] in text
+        assert "Rupees Eleven Thousand Eight Hundred Only" in text
         sales.post(f"{S}/invoices/{inv['invoice_id']}/irn")
         with Rules(make_client, invoiceCopies="THREE"):
             done = PdfReader(io.BytesIO(sales.get(url).content))
@@ -290,3 +291,16 @@ def test_the_vehicle_of_an_e_way_bill_can_be_changed_once_it_exists(
     assert got.json()["ewb_vehicle_no"] == "MH14XY9999"
     bad = sales.post(f"{base}/vehicle", json={**change, "vehicle_no": "xx"})
     assert bad.status_code == 422
+
+
+def test_amounts_are_written_in_words_the_indian_way():
+    from decimal import Decimal  # noqa: PLC0415
+
+    from heyyerp_api.sales.invoice_print import amount_in_words  # noqa: PLC0415
+
+    assert amount_in_words(Decimal("11800")) == "Rupees Eleven Thousand Eight Hundred Only"
+    assert amount_in_words(Decimal("118000.50")) == (
+        "Rupees One Lakh Eighteen Thousand and Fifty Paise Only")
+    assert amount_in_words(Decimal("25000000")) == "Rupees Two Crore Fifty Lakh Only"
+    assert amount_in_words(Decimal("0")) == "Rupees Zero Only"
+    assert amount_in_words(Decimal("100")) == "Rupees One Hundred Only"

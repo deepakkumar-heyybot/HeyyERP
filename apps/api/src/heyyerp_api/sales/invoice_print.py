@@ -78,6 +78,39 @@ async def set_profile(unit_id: UUID, body: ProfileIn, ctx: Ctx = Depends(manage_
     return await get_profile(unit_id, ctx)
 
 
+ONES = ("Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen "
+        "Fifteen Sixteen Seventeen Eighteen Nineteen").split()
+TENS = "Twenty Thirty Forty Fifty Sixty Seventy Eighty Ninety".split()
+
+
+def below_thousand(n: int) -> str:
+    words = []
+    if n >= 100:
+        words.append(f"{ONES[n // 100]} Hundred")
+        n %= 100
+    if n >= 20:
+        words.append(TENS[n // 10 - 2] + (f" {ONES[n % 10]}" if n % 10 else ""))
+    elif n:
+        words.append(ONES[n])
+    return " ".join(words)
+
+
+def amount_in_words(amount: Decimal) -> str:
+    """"Rupees One Lakh Eighteen Thousand Only", in the Indian system (lakh, crore)."""
+    rupees, paise = divmod(int((amount * 100).quantize(Decimal(1))), 100)
+    parts = []
+    for size, name in ((10_000_000, "Crore"), (100_000, "Lakh"), (1000, "Thousand")):
+        if rupees >= size:
+            parts.append(f"{below_thousand(rupees // size)} {name}")
+            rupees %= size
+    if rupees or not parts:
+        parts.append(below_thousand(rupees) or "Zero")
+    text = "Rupees " + " ".join(parts)
+    if paise:
+        text += f" and {below_thousand(paise)} Paise"
+    return text + " Only"
+
+
 def money(value: Decimal) -> str:
     return f"{value:,.2f}"
 
@@ -156,6 +189,8 @@ def draw(pdf: InvoicePdf, d: dict[str, Any], profile: dict[str, Any], tax: tuple
             pdf.cell(130, 5.5, "")
             pdf.cell(32, 5.5, name)
             pdf.cell(32, 5.5, money(value), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+    pdf.line_text(amount_in_words(d["taxable_amount"] + d["tax_amount"]), 8, True)
     for title, text in (("Bank details", profile["bank_details"]), ("Terms", profile["terms"])):
         if text:
             pdf.ln(2)

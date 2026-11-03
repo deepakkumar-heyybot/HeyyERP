@@ -9,7 +9,12 @@ from heyyerp_api.notify import senders
 from .test_compound_batches import Fresh
 from .test_costing import Rules
 from .test_hr import decide
-from .test_notifications import Fake, run_jobs, sql
+from .test_notifications import (
+    Fake,
+    quiet_queue,  # noqa: F401
+    run_jobs,
+    sql,
+)
 from .test_notifications import submit_kaizen as submit
 
 pytestmark = pytest.mark.usefixtures("api_database")

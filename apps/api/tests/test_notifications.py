@@ -34,6 +34,15 @@ class Fake:
         self.sent.append((to, subject, body))
 
 
+@pytest.fixture(autouse=True)
+def quiet_queue(api_database):
+    """Earlier test files leave messages waiting; these tests count what they send themselves."""
+    sql(api_database, "update erp.notification set status = 'SENT' where status = 'QUEUED' "
+        "and channel <> 'IN_APP'")
+    sql(api_database, "update erp.notification set read_at = now() where read_at is null")
+    sql(api_database, "update erp.outbox_event set published_at = now() where published_at is null")
+
+
 @pytest.fixture
 def mail(monkeypatch):
     fake = Fake()

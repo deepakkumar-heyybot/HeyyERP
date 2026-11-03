@@ -417,6 +417,61 @@ these instead of assuming values. Recently added keys:
 | `appraisalMaxScore`, `kaizenMaxScore` | Score scales |
 | `kaizenRewardPct`, `kaizenRewardMax` | Kaizen reward scheme (0 means none) |
 | `attachmentMaxKb` | Largest attachment |
+| `notifyEmail`, `notifyWhatsapp`, `notifyMaxAttempts` | Channels used for alerts and how often a failed message is retried |
+| `eInvoice`, `ewbThreshold`, `gspMaxAttempts` | E-invoice mode (OFF, MANUAL, AUTO), the value above which an e-way bill is expected, retries with the GST provider |
+| `invoiceCopies` | Copies printed on a tax invoice (ONE or THREE) |
+| `approvalByLink`, `approvalLinkHours`, `approvalLinkMaxAmount` | Approving from an e-mail or WhatsApp link |
+| `delegationMaxDays` | Longest approval delegation |
+| `shiftAlertAfterMinutes` | Wait before the "shift ended without production entry" alert (0 = off) |
+
+### 8.17 Reports (`/reports`)
+`GET /reports` lists the reports the signed-in role may run, with their filters (name, type, options) and
+columns. `GET /reports/{key}?format=json|csv|xlsx|pdf&limit=` runs one; the filters are query parameters.
+JSON for an on-screen table, the other three are downloads (set `Content-Disposition`). Files hold at most
+50,000 rows (PDF 5,000); every run is audited. Hindi and English print together in the PDF.
+
+### 8.18 Notifications (`/notifications`, admin: `/admin/jobs`)
+`GET /notifications` is the signed-in person's inbox (newest first; `?unread=true`), `GET /notifications/count`
+the badge number, `POST /notifications/{id}/read` and `/notifications/read-all`. Poll the count every minute
+or so (no push yet). Each item has `subject`, `body`, `reference_type` and `reference_id` (an approval id, a
+shift, ...). The administrator's monitor is `GET /admin/jobs` (queue state, failed messages), `POST
+/admin/jobs/run` (run the background jobs now) and `POST /admin/notifications/{id}/retry`.
+
+### 8.19 Approving from a link and delegation
+- **Link page `/approve/{token}`** (the frontend builds this public page, no sign-in): `GET
+  /api/v1/public/approval-links/{token}` shows `title`, `amount`, `step_label`, `requested_by`,
+  `expires_at`; `POST .../{token}/decide` with `{decision: "APPROVE"|"REJECT", note}` decides. 404 means an
+  unknown link; 410 means used, expired or already decided (show the `detail`). Opening the page must not
+  decide anything: always ask the person to press a button. Links exist only when the company switched on
+  `approvalByLink`.
+- **Delegation** (`/approvals/delegations`): `POST` `{to_user_id, valid_from, valid_to}` hands your role's
+  approvals to a colleague (limit: setting `delegationMaxDays`); `GET` lists the ones you gave and received
+  (`?all_=true` for everyone, needs `approval.view_all`); `POST /{id}/revoke` ends one now. While in force,
+  the stand-in sees those approvals in `GET /approvals?scope=mine` and decides them as usual; the audit
+  shows "on behalf of".
+
+### 8.20 E-invoice and e-way bill (sales invoice screen)
+`GET /sales/invoices/{id}/einvoice` gives `irn_status` (NONE, QUEUED, GENERATED, FAILED, CANCELLED), the
+IRN, acknowledgement, `signed_qr`, the e-way bill, `gsp_error`, `required` (the customer has a GSTIN and the
+company uses e-invoices), `ewb_needed` (value is over the company threshold) and `pending_jobs`. Buttons:
+`POST .../irn`, `.../irn/cancel` (`{reason: "1".."4", remark}`, within 24 hours, e-way bill first),
+`.../ewb` (`{vehicle_no, distance_km, transport_mode}`), `.../ewb/vehicle` (`{vehicle_no, reason, remark}`),
+`.../ewb/cancel`. A provider that is down leaves the job queued (status QUEUED, retried by the server); a
+rejection shows FAILED with the reason in `gsp_error` (often a missing address, pincode or HSN: the message
+lists them). Set the plant and customer address with `PUT /org/units/{id}/address` and `PUT
+/parties/customers/{id}/address` (`address_line`, `city`, `pincode`). Admin: `GET /admin/gsp-jobs`, `POST
+/admin/gsp-jobs/{id}/retry`. Setting `eInvoice` (OFF, MANUAL, AUTO) decides whether to show these buttons.
+
+### 8.21 Printing the tax invoice
+`GET /sales/invoices/{id}/pdf` downloads the invoice (QR code and IRN once the e-invoice exists, amount in
+words, copies as per setting `invoiceCopies`). The wording of each plant is edited with `GET/PUT
+/org/units/{id}/print-profile` (`legal_name`, `bank_details`, `terms`, `signatory`, `footer`; needs
+`org.manage`).
+
+### 8.22 Shift alert
+Planners get an in-app notification "Shift A of <date> has no production entry" listing the machines. No
+screen needed beyond the notification inbox; the older `GET /manufacturing/shift-entries/missing` still lists
+them on demand.
 
 ## 9. Every endpoint
 
@@ -438,6 +493,21 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | POST | `/api/v1/admin/users` | `admin` |
 | GET | `/api/v1/admin/users/{user_id}` | `admin` |
 | PATCH | `/api/v1/admin/users/{user_id}` | `admin` |
+
+### approval delegation
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/approvals/delegations` | signed in |
+| POST | `/api/v1/approvals/delegations` | signed in |
+| POST | `/api/v1/approvals/delegations/{delegation_id}/revoke` | signed in |
+
+### approval links
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/public/approval-links/{token}` | signed in |
+| POST | `/api/v1/public/approval-links/{token}/decide` | signed in |
 
 ### approvals
 
@@ -481,6 +551,21 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | GET | `/api/v1/parties/vendors/{vendor_id}` | signed in |
 | PATCH | `/api/v1/parties/vendors/{vendor_id}` | `vendor.manage` |
 | POST | `/api/v1/parties/vendors/{vendor_id}/deactivate` | `vendor.manage` |
+
+### e-invoice and e-way bill
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/admin/gsp-jobs` | `admin` |
+| POST | `/api/v1/admin/gsp-jobs/{job_id}/retry` | `admin` |
+| PUT | `/api/v1/org/units/{unit_id}/address` | `org.manage` |
+| PUT | `/api/v1/parties/customers/{customer_id}/address` | `customer.manage` |
+| GET | `/api/v1/sales/invoices/{invoice_id}/einvoice` | module `sales` |
+| POST | `/api/v1/sales/invoices/{invoice_id}/ewb` | module `sales` |
+| POST | `/api/v1/sales/invoices/{invoice_id}/ewb/cancel` | module `sales` |
+| POST | `/api/v1/sales/invoices/{invoice_id}/ewb/vehicle` | module `sales` |
+| POST | `/api/v1/sales/invoices/{invoice_id}/irn` | module `sales` |
+| POST | `/api/v1/sales/invoices/{invoice_id}/irn/cancel` | module `sales` |
 
 ### finance
 
@@ -647,6 +732,14 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | POST | `/api/v1/inventory/transfers/{transfer_id}/receive` | `inv.transfer` |
 | GET | `/api/v1/inventory/valuation` | module `inventory` |
 
+### invoice printing
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/org/units/{unit_id}/print-profile` | `org.manage` |
+| PUT | `/api/v1/org/units/{unit_id}/print-profile` | `org.manage` |
+| GET | `/api/v1/sales/invoices/{invoice_id}/pdf` | module `sales` |
+
 ### kaizen
 
 | Method | Path | Needs |
@@ -729,6 +822,18 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | POST | `/api/v1/manufacturing/work-orders/{work_order_id}/complete` | `mfg.plan` |
 | GET | `/api/v1/manufacturing/work-orders/{work_order_id}/material-variance` | module `manufacturing` |
 | POST | `/api/v1/manufacturing/work-orders/{work_order_id}/release` | `mfg.plan` |
+
+### notifications
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/admin/jobs` | `admin` |
+| POST | `/api/v1/admin/jobs/run` | `admin` |
+| POST | `/api/v1/admin/notifications/{notification_id}/retry` | `admin` |
+| GET | `/api/v1/notifications` | signed in |
+| GET | `/api/v1/notifications/count` | signed in |
+| POST | `/api/v1/notifications/read-all` | signed in |
+| POST | `/api/v1/notifications/{notification_id}/read` | signed in |
 
 ### organization
 
@@ -857,6 +962,13 @@ or module the caller must have; "signed in" means any signed-in person with an E
 | PATCH | `/api/v1/ref/tax-codes/{tax_code_id}` | `refdata.manage` |
 | GET | `/api/v1/ref/uom` | signed in |
 
+### reports
+
+| Method | Path | Needs |
+|---|---|---|
+| GET | `/api/v1/reports` | module `reports` |
+| GET | `/api/v1/reports/{key}` | module `reports` |
+
 ### sales
 
 | Method | Path | Needs |
@@ -937,13 +1049,12 @@ messages.
 ## 11. Not built yet (do not build screens for these)
 
 - **Payroll and recruitment**: BRD phase 2.
-- **Reports, integrations and AI (Phase 12)**: report library with Excel and PDF export, e-invoice and
-  e-way bill through a GST provider, WhatsApp and e-mail notifications, the AI copilot and OCR agents,
-  a real-time gateway. (File attachments exist for kaizen and breakdowns only.)
+- **Phase 12, still to come**: mailbox watcher for customer schedules, barcode and label printing, the AI
+  copilot and OCR agents, a real-time gateway (use polling for now). E-invoice for inter-unit invoices and
+  credit notes (there is no credit note document yet).
 - **GST filing**: the GST screens prepare data; nothing is filed with the portal.
-- Smaller gaps: sign-in and sign-out audit rows, editable roles, approval delegation, bulk approve,
-  shop-floor PIN or OTP sign-in, barcode and label printing, customer portal, vendor rating, cash
-  purchase, PO amendment after approval, a shift master for production shifts A, B and C.
+- Smaller gaps: sign-in and sign-out audit rows, editable roles, bulk approve, shop-floor PIN or OTP
+  sign-in, customer portal, vendor rating, cash purchase, PO amendment after approval.
 
 ## 12. Quick checks
 
