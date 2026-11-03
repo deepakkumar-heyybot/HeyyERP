@@ -1,18 +1,18 @@
 # heyyERP backend guide for the frontend team
 
-For V-Rub Suspensions (multi-plant rubber and metal parts ERP). Written 28 Oct 2026. This is the
+For V-Rub Suspensions (multi-plant rubber and metal parts ERP). Updated 3 Nov 2026 (first written 28 Oct). This is the
 single document a frontend developer needs to start building screens against the backend.
 
 ## 1. Where things stand
 
 | | |
 |---|---|
-| Backend built | Phases 0 to 9: sign-in security, organization and master data, approvals, product engineering, procurement, inventory, manufacturing, quality, sales and dispatch |
-| Not built yet | Payroll and recruitment (BRD phase 2); Phase 12 reports, integrations, AI (see section 11) |
-| API size | 261 endpoints under `/api/v1`, all documented live at `<API URL>/api/v1/docs` (Swagger) |
-| Database | PostgreSQL, 16 migrations (`0001` to `0016`), row-level security on every tenant table |
-| Tests | 360 automated tests, all passing; regression guards fail if an endpoint or permission changes by accident |
-| Web app | `apps/web` has only the sign-in, sign-up, password reset and 2FA screens. Everything else is yours to build |
+| Backend built | Phases 0 to 11 and most of Phase 12: sign-in security, organization and master data, approvals (with delegation and links), product engineering, procurement, inventory, manufacturing, quality, sales and dispatch, finance (accounts, bills, payments, receivables, GST, TDS, costing, fixed assets, consolidation), maintenance, HR, kaizen, reports, notifications, e-invoice and e-way bill, invoice printing |
+| Not built yet | Payroll and recruitment (BRD phase 2); mailbox watcher, barcode labels, AI copilot and OCR (section 11) |
+| API size | 423 endpoints under `/api/v1`, all documented live at `<API URL>/api/v1/docs` (Swagger) |
+| Database | PostgreSQL, 36 migrations (`0001` to `0036`), row-level security on every tenant table |
+| Tests | 514 automated tests; regression guards fail if an endpoint or permission changes by accident |
+| Web app | `apps/web` has only the sign-in, sign-up, password reset and 2FA screens. Everything else is yours to build. A short hand-over with the build order is in `docs/FRONTEND_HANDOVER.md` |
 
 Rule of thumb: **the backend already enforces every rule** (permissions, plant scope, approvals,
 stock rules, statuses). The frontend should show and hide things for convenience, never rely on
