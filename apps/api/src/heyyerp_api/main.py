@@ -6,12 +6,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from heyyerp_api import observability
 from heyyerp_api.api.router import api_router
 from heyyerp_api.config import get_settings
 from heyyerp_api.db import dispose_database
 from heyyerp_api.notify.jobs import worker_loop
 
 settings = get_settings()
+observability.configure_logging()
 
 
 @asynccontextmanager
@@ -39,6 +41,8 @@ app.add_middleware(
     allow_origins=[settings.web_base_url],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Idempotency-Key", "If-Match"],
+    allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+observability.install(app)
 app.include_router(api_router, prefix=settings.api_v1_prefix)
