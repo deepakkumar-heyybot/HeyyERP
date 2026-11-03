@@ -17,6 +17,7 @@ dependencies = [
     "cryptography>=43,<51",
     "fpdf2>=2.8,<3.0",
     "uharfbuzz>=0.40",
+    "segno>=1.6,<2.0",
 ]
 
 [project.optional-dependencies]

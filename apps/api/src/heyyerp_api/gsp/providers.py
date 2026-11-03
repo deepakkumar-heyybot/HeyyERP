@@ -48,6 +48,9 @@ class Gsp(Protocol):
 
     async def cancel_ewb(self, ewb_no: str, reason: str, remark: str) -> None: ...
 
+    async def update_ewb_vehicle(self, ewb_no: str, vehicle_no: str, reason: str,
+                                 remark: str) -> None: ...
+
 
 class MockGsp:
     """Test numbers made from the document, so the same invoice always gets the same IRN."""
@@ -69,6 +72,10 @@ class MockGsp:
                          valid_till=datetime.now(UTC) + timedelta(days=days))
 
     async def cancel_ewb(self, ewb_no: str, reason: str, remark: str) -> None:
+        return None
+
+    async def update_ewb_vehicle(self, ewb_no: str, vehicle_no: str, reason: str,
+                                 remark: str) -> None:
         return None
 
 
@@ -124,6 +131,12 @@ class HttpGsp:
     async def cancel_ewb(self, ewb_no: str, reason: str, remark: str) -> None:
         await self.call(get_settings().gsp_ewb_path + "/cancel",
                         {"ewbNo": ewb_no, "cancelRsnCode": reason, "cancelRmrk": remark})
+
+    async def update_ewb_vehicle(self, ewb_no: str, vehicle_no: str, reason: str,
+                                 remark: str) -> None:
+        await self.call(get_settings().gsp_ewb_path + "/vehicle",
+                        {"ewbNo": ewb_no, "vehicleNo": vehicle_no, "reasonCode": reason,
+                         "reasonRem": remark})
 
 
 override: dict[str, Gsp] = {}  # tests and special set-ups put their own provider here

@@ -656,6 +656,11 @@
    "default": 5,
    "rule": "DEFAULT"
   },
+  "invoiceCopies": {
+   "kind": "enum",
+   "default": "ONE",
+   "rule": "DEFAULT"
+  },
   "salvageMaxPct": {
    "kind": "int",
    "default": 5,

@@ -38,6 +38,13 @@ admin = requires("admin")
 VEHICLE = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}$|^TRANS[0-9]{3,8}$")
 
 
+def clean_vehicle(value: str) -> str:
+    value = re.sub(r"[\s-]", "", value.upper())
+    if not VEHICLE.match(value):
+        raise ValueError("Give the vehicle number as on the registration, e.g. MH12AB1234")
+    return value
+
+
 def raiser(ctx: Ctx) -> Ctx:
     mine = ctx.principal
     if not (has_permission(mine, "gst") or has_permission(mine, "sales.dispatch")):
@@ -73,18 +80,20 @@ class TransportIn(Strict):
     distance_km: int = Field(ge=1, le=4000)
     transport_mode: Literal["ROAD", "RAIL", "AIR", "SHIP"] = "ROAD"
 
-    @field_validator("vehicle_no")
-    @classmethod
-    def vehicle(cls, value: str) -> str:
-        value = re.sub(r"[\s-]", "", value.upper())
-        if not VEHICLE.match(value):
-            raise ValueError("Give the vehicle number as on the registration, e.g. MH12AB1234")
-        return value
+    _vehicle = field_validator("vehicle_no")(clean_vehicle)
 
 
 class CancelIn(Strict):
     reason: Literal["1", "2", "3", "4"]  # duplicate, data entry mistake, order cancelled, other
     remark: str = Field(min_length=3, max_length=100)
+
+
+class VehicleIn(Strict):
+    vehicle_no: str = Field(min_length=6, max_length=15)
+    reason: Literal["1", "2", "3", "4"]  # breakdown, transhipment, others, first time
+    remark: str = Field(min_length=3, max_length=100)
+
+    _vehicle = field_validator("vehicle_no")(clean_vehicle)
 
 
 class EinvoiceOut(BaseModel):
@@ -216,6 +225,18 @@ async def raise_ewb(invoice_id: UUID, body: TransportIn,
         raise HTTPException(status.HTTP_409_CONFLICT, "The IRN of this invoice was cancelled")
     await audit(ctx, "invoice.ewb", "invoice", invoice_id, {"invoice_no": head["invoice_no"]})
     return await start(ctx, service.EWB_GENERATE, invoice_id, body.model_dump())
+
+
+@router.post("/sales/invoices/{invoice_id}/ewb/vehicle", response_model=EinvoiceOut)
+async def change_vehicle(invoice_id: UUID, body: VehicleIn,
+                         ctx: Ctx = Depends(acting)) -> EinvoiceOut:
+    """Part B of the e-way bill: the goods move to another vehicle."""
+    head = await require_issued(ctx, invoice_id)
+    if not head["ewb_no"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "There is no e-way bill to update")
+    await audit(ctx, "invoice.ewb_vehicle", "invoice", invoice_id,
+                {"invoice_no": head["invoice_no"], "vehicle_no": body.vehicle_no})
+    return await start(ctx, service.EWB_VEHICLE, invoice_id, body.model_dump())
 
 
 @router.post("/sales/invoices/{invoice_id}/ewb/cancel", response_model=EinvoiceOut)

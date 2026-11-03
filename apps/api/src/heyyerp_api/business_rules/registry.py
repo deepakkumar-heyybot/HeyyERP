@@ -137,6 +137,9 @@ SETTINGS: tuple[SettingDef, ...] = (
                "bill is expected (shown as a reminder)", "DEFAULT", minimum=0),
     SettingDef("gspMaxAttempts", "int", 5, "Times a call to the GST provider is tried before it "
                "is marked failed", "DEFAULT", minimum=1, maximum=20),
+    SettingDef("invoiceCopies", "enum", "ONE", "Copies printed on a tax invoice: ONE, or THREE "
+               "(Original for recipient, Duplicate for transporter, Triplicate for supplier)",
+               "DEFAULT", options=("ONE", "THREE")),
     SettingDef("salvageMaxPct", "int", 5, "Residual value allowed on an asset, as % of its cost "
                "(the Companies Act schedule assumes 5)", "DEFAULT", minimum=0, maximum=100),
     SettingDef("msmePayDays", "int", 45, "Days within which MSME vendors must be paid", "DEFAULT",

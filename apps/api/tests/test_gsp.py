@@ -242,3 +242,51 @@ def test_the_mock_provider_is_refused_in_production(monkeypatch):
             providers.provider()
     finally:
         get_settings.cache_clear()
+
+
+def test_the_invoice_prints_with_the_qr_the_company_wording_and_the_chosen_copies(
+        make_client, api_database, gsp):
+    import io  # noqa: PLC0415
+
+    from pypdf import PdfReader  # noqa: PLC0415
+
+    w, inv = invoice_of(make_client, api_database)
+    sales = Fresh(make_client, "SALES")
+    url = f"{S}/invoices/{inv['invoice_id']}/pdf"
+    profile = f"/api/v1/org/units/{w['unit']['unit_id']}/print-profile"
+    admin = Fresh(make_client, "ADMIN")
+    assert admin.put(profile, json={
+        "legal_name": "V-Rub Suspensions Pvt Ltd", "bank_details": "Bank: Test, IFSC TEST0001",
+        "terms": "Payment within 30 days", "signatory": "Authorised signatory",
+        "footer": "Subject to Pune jurisdiction"}).status_code == 200
+    assert sales.put(profile, json={}).status_code == 403  # the plant's wording is the admin's
+    with Rules(make_client, eInvoice="MANUAL"):
+        plain = sales.get(url)
+        assert plain.status_code == 200 and plain.headers["content-type"] == "application/pdf"
+        before = PdfReader(io.BytesIO(plain.content))
+        assert len(before.pages) == 1 and not before.pages[0].images  # no IRN yet: no QR
+        text = before.pages[0].extract_text()
+        assert "V-Rub Suspensions Pvt Ltd" in text and "Payment within 30 days" in text
+        assert "TEST0001" in text and inv["invoice_no"] in text
+        sales.post(f"{S}/invoices/{inv['invoice_id']}/irn")
+        with Rules(make_client, invoiceCopies="THREE"):
+            done = PdfReader(io.BytesIO(sales.get(url).content))
+        assert len(done.pages) == 3 and len(done.pages[0].images) == 1  # the QR is on each copy
+        assert "Duplicate for transporter" in done.pages[1].extract_text()
+        assert "IRN:" in done.pages[0].extract_text()
+    assert Fresh(make_client, "PROD").get(url).status_code in (200, 403)
+
+
+def test_the_vehicle_of_an_e_way_bill_can_be_changed_once_it_exists(
+        make_client, api_database, gsp):
+    w, inv = invoice_of(make_client, api_database)
+    sales = Fresh(make_client, "SALES")
+    base = f"{S}/invoices/{inv['invoice_id']}/ewb"
+    change = {"vehicle_no": "MH14XY9999", "reason": "1", "remark": "breakdown"}
+    assert sales.post(f"{base}/vehicle", json=change).status_code == 409  # no e-way bill yet
+    assert sales.post(base, json={"vehicle_no": "MH12AB1234", "distance_km": 100}).status_code == 200
+    got = sales.post(f"{base}/vehicle", json=change)
+    assert got.status_code == 200, got.text
+    assert got.json()["ewb_vehicle_no"] == "MH14XY9999"
+    bad = sales.post(f"{base}/vehicle", json={**change, "vehicle_no": "xx"})
+    assert bad.status_code == 422

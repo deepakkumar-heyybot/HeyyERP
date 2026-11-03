@@ -55,6 +55,7 @@ from heyyerp_api.sales.challans import router as challans_router
 from heyyerp_api.sales.dispatch import router as dispatch_router
 from heyyerp_api.sales.imports import router as sched_imports_router
 from heyyerp_api.sales.interunit import router as interunit_router
+from heyyerp_api.sales.invoice_print import router as invoice_print_router
 from heyyerp_api.sales.invoices import router as invoices_router
 from heyyerp_api.sales.orders import router as sales_orders_router
 from heyyerp_api.sales.pricing import router as pricing_router
@@ -125,4 +126,5 @@ api_router.include_router(attachments_router)
 api_router.include_router(reports_router)
 api_router.include_router(notifications_router)
 api_router.include_router(gsp_router)
+api_router.include_router(invoice_print_router)
 api_router.include_router(tds_router)

@@ -22,8 +22,8 @@ from heyyerp_api.gsp.providers import GspError, provider
 from heyyerp_api.masters.common import Ctx, one, rows
 
 log = logging.getLogger("heyyerp.gsp")
-IRN_GENERATE, IRN_CANCEL, EWB_GENERATE, EWB_CANCEL = (
-    "IRN_GENERATE", "IRN_CANCEL", "EWB_GENERATE", "EWB_CANCEL")
+IRN_GENERATE, IRN_CANCEL, EWB_GENERATE, EWB_CANCEL, EWB_VEHICLE = (
+    "IRN_GENERATE", "IRN_CANCEL", "EWB_GENERATE", "EWB_CANCEL", "EWB_VEHICLE")
 
 
 async def enqueue(ctx: Ctx, operation: str, invoice_id: UUID,
@@ -84,6 +84,15 @@ async def execute(ctx: Ctx, operation: str, invoice_id: UUID, params: dict[str, 
         await rows(ctx, "UPDATE erp.customer_invoice SET ewb_no = NULL, ewb_valid_till = NULL, "
                    "gsp_error = NULL WHERE invoice_id = :id RETURNING invoice_id",
                    {"id": invoice_id})
+    elif operation == EWB_VEHICLE:
+        head = await one(ctx, "SELECT ewb_no FROM erp.customer_invoice WHERE invoice_id = :id",
+                         {"id": invoice_id})
+        assert head is not None and head["ewb_no"]
+        await gsp.update_ewb_vehicle(head["ewb_no"], params["vehicle_no"], params["reason"],
+                                     params["remark"])
+        await rows(ctx, "UPDATE erp.customer_invoice SET ewb_vehicle_no = :v, gsp_error = NULL "
+                   "WHERE invoice_id = :id RETURNING invoice_id",
+                   {"v": params["vehicle_no"], "id": invoice_id})
     else:
         raise GspError(f"Unknown operation {operation}", retryable=False)
 
